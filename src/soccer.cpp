@@ -111,6 +111,15 @@ using namespace kevin;
 
 
 
+////////////////////////////////////////////////////////////////////
+// Navigation will transform the IMU (and other) sensor's inofrmation
+// into position, velocity, and orientation of the robot. It will 
+// contain the kalman filter which blends both the noisey data 
+// measurements and the current estimate into the next future estimate.
+//
+// \note uses OpenCV kalman filter
+// \note not thread safe
+////////////////////////////////////////////////////////////////////
 class Navigation {
 public:
     Navigation(){;}
@@ -130,6 +139,13 @@ public:
     Eigen::Vector3d mags;
 };
 
+////////////////////////////////////////////////////////////////////
+// SharedMemory is the generic repository of shared memory for the
+// robot. It's primary function is to transform data from bytes (int8)
+// into shorts (int16) and keep track of all data sent from the robot.
+//
+// \note not thread safe
+////////////////////////////////////////////////////////////////////
 class SharedMemory {
 public:
     typedef union {
@@ -198,6 +214,11 @@ private:
 
 SharedMemory memory;
 
+////////////////////////////////////////////////////////////////////
+// cRobot is the hardware driver which handles all commands between 
+// ROS and the robot.
+////////////////////////////////////////////////////////////////////
+
 class cRobot {
 public:
 	cRobot(bool s=false) : phi(4,3), sp(s){
@@ -249,11 +270,14 @@ public:
 	    return c;
 	}
 	
+	/**
+	 * Sends motor commands stored in desiredVelState to the robot.
+	 */
 	bool sendControl(void){
 	    bool ret = true;
 	    motorVel = phi*desiredVelStates;
 	    
-	    // send to uC
+	    // create message and send to uC
 	    byte dir = 0 | ((int)sign(motorVel(3))<<3 | (int)sign(motorVel(2))<<2 | (int)sign(motorVel(1))<<1 | (int)sign(motorVel(0)) );
 	    byte buffer[8];
 	    buffer[0] = '<';
@@ -269,7 +293,7 @@ public:
         str.assign((char*)buffer,8);
 	    sp.write(str);
 	    
-	    usleep(1000); // wait
+	    usleep(1000); // wait for 1 msec
 	    
 	    sp.flush(); // shouldn't have to do this!
 	    
@@ -291,6 +315,11 @@ public:
 	
 	void reset(){ sp.write("<r>"); }
 	
+	/**
+	 * Waits for a defined number of bytes before returning true. If
+	 * serial.available() fails missCnt number of times, then the 
+	 * funtion returns false.
+	 */
 	bool waitForData(unsigned int size, int missCnt=30){
 	    int cnt = 0;
 	    bool ok = true;
@@ -342,7 +371,7 @@ public:
 	    
 	}
 	
-	// serial comm
+	// serial comm pass through to open the serial port
 	bool openSerialPort(std::string &port_name, int baud){
     
         try{ sp.open(port_name.c_str(), baud); }
@@ -354,7 +383,8 @@ public:
         
         
     /**
-     * Callback
+     * Callback for receiving Twist messages from joystick or motion
+     * planner.
      */
     void cmdVelReceived(const geometry_msgs::Twist::ConstPtr& cmd_vel)
     {
@@ -388,19 +418,24 @@ protected:
 		return true; 
 	}
 	
+	//SharedMemory mem;
+	//Navigation nav;
+	
 	double mass;
 	double inertia; 
 	double radius; 
 	double angle;
 	Eigen::Vector3d desiredVelStates; // [vx vy radius*w]
 	Eigen::Vector4d motorVel;
-	Eigen::MatrixXd phi;
+	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
 	Serial sp; 
 };
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
+// The main code is composed of basic ROS stuff to get things
+// setup and going.
 ////////////////////////////////////////////////////////////
 
 int main( int argc, char** argv )

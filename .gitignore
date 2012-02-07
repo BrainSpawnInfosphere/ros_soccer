@@ -1,3 +1,6 @@
 .DS_Store
 arch
 *.py
+bin
+build
+msg_gen

@@ -97,8 +97,11 @@ title=\lstname,                 % show the filename of files included with \lsti
 
 \begin{document}
 
+%\begin{titlepage}
+
 \maketitle
 
+%\end{titlepage}
 
  
 \begin{abstract}
@@ -464,40 +467,40 @@ where the error ($\tilde x$) is the difference between the estimated state ($\ha
 \subsection{Electronic Power System}
 
 \begin{figure*}[tb]
-	%\begin{minipage}[htb]{3in}
+	\begin{minipage}[htb]{3in}
 		\centering
- 		%\includegraphics[height=2.5in]{pics/holonomic_robot.png} 
-		\caption{\label{fig:power}The power system of the robot.}  
- 	%\end{minipage}
- 	%\hfill
- 	%\begin{minipage}[htb]{3in}
+ 		\includegraphics[height=2in]{pics/bluetooth_back.jpg} 
+		\caption{\label{fig:imu}IMU.}  
+ 	\end{minipage}
+ 	\hfill
+ 	\begin{minipage}[htb]{3in}
 		%\centering
- 		%\includegraphics[height =2.5in]{pics/equiv_motors.png} 
+ 		\includegraphics[height =2in]{pics/motor_driver.jpg} 
 		%\caption{\label{fig:equivalent_motors} Number of equivalent motors for any direction under linear movement only, no rotational movement allowed.} 
- 	%\end{minipage} 
+ 	\end{minipage} 
 \end{figure*}
 
 \subsection{Electronics and Sensors}
 
 \begin{figure*}[tb]
-	%\begin{minipage}[htb]{3in}
+	\begin{minipage}[htb]{3in}
 		\centering
- 		%\includegraphics[height=2.5in]{pics/holonomic_robot.png} 
-		\caption{\label{fig:schematic}Schematic of the electronics and sensors of the robot.}  
- 	%\end{minipage}
- 	%\hfill
- 	%\begin{minipage}[htb]{3in}
+ 		\includegraphics[height=2in]{pics/imu.png} 
+		\caption{\label{fig:imu}IMU.}  
+ 	\end{minipage}
+ 	\hfill
+ 	\begin{minipage}[htb]{3in}
 		%\centering
- 		%\includegraphics[height =2.5in]{pics/equiv_motors.png} 
+ 		\includegraphics[height =2in]{pics/motor_driver.jpg} 
 		%\caption{\label{fig:equivalent_motors} Number of equivalent motors for any direction under linear movement only, no rotational movement allowed.} 
- 	%\end{minipage} 
+ 	\end{minipage} 
 \end{figure*}
 
 The robot is teleoperated from a laptop via a bluetooth link to an Arduino microcontroller which runs the motor drivers and sensors.
 
-MiniIMU
+\subsubsection{MiniIMU}
 
-Camera
+\subsubsection{Camera}
 
 \subsection{Software}
 
@@ -517,6 +520,32 @@ Camera
   
 The robot utilizes the open source Robotic Operating System (ROS) \cite{ros}. The core software is run on a laptop and commands and telemetry is passed back and forth via serial bluetooth. 
 
+\subsubsection{OpenCV}
+
+The vision system uses the Open Computer Vision (OpenCV \cite{opencv}) to ...
+
+\begin{figure*}[tb]
+	\begin{minipage}[htb]{3in}
+		\centering
+ 		\includegraphics[height=2in]{pics/rgb.png} 
+		\caption{\label{fig:rgb}RGB color cube.}  
+ 	\end{minipage}
+ 	\hfill
+ 	\begin{minipage}[htb]{3in}
+		\centering
+ 		\includegraphics[height =2in]{pics/hsv.png} 
+		\caption{\label{fig:hsv} HSV color cylinder.} 
+ 	\end{minipage} 
+\end{figure*}
+
+\begin{description}
+	\item[Hue] The "attribute of a visual sensation according to which an area appears to be similar to one of the perceived colors: red, yellow, green, and blue, or to a combination of two of them"
+	\item[Saturation] The "colorfulness of a stimulus relative to its own brightness"
+	\item[Value, Lightness] The "brightness relative to the brightness of a similarly illuminated white"
+\end{description}
+
+\subsubsection{Point Cloud Library}
+
 \section{Results}
 
 \section{References}
@@ -531,9 +560,13 @@ R. Balakrishna, Ashitava Ghosal, "Modeling of Slip for Wheeled Mobile Robots," l
 
 \bibitem{wheel_slip2} J. Agullo, S. Cardona, and J. Vivancos, ÒKinematics of vehicles with directional sliding wheels,Ó Mechanisms and Muchine Theory, vol. 22, no. 4, pp. 295-301, 1987.
 
-\bibitem{ros} www.ros.org
+\bibitem{ros} \url{http://www.ros.org}
 
-\bibitem{opencv} www.opencv.com
+\bibitem{color_space} \url{http://en.wikipedia.org/wiki/HSL_and_HSV}
+
+\bibitem{pcl} \url{http://pointclouds.org}
+
+\bibitem{opencv} \url{http://opencv.willowgarage.com}
 
 \bibitem{wiki_non_holonomic} \url{http://en.wikipedia.org/wiki/Non-holonomic_system}
 

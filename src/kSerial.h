@@ -62,6 +62,8 @@ public:
 };
 
 
+#define __K_SERIAL_DEBUG__ 0
+
 class kSerial {
 public:
 	kSerial(){
@@ -116,7 +118,7 @@ public:
 			numread += n;
 		}
 		
-		if (1){
+		if (__K_SERIAL_DEBUG__){
 			printf ("Read:   ");
 			for (i = 0; i < numread; i++)
 				printf ("%d ", buf[i]);
@@ -131,26 +133,21 @@ public:
 		int i, numwritten = 0, n = 0, numzeroes = 0;
 		
 		//write (fd, (buf + numwritten), (numbytes - numwritten));
+    
+        while (numwritten < numbytes){
+            n = ::write (fd, (buf + numwritten), (numbytes - numwritten));
+            
+            if (n < 0) return -1;
+            
+            if (0 == n){
+                numzeroes++;
+                
+                if (3 < numzeroes) break;
+            }
+            numwritten += n;
+        }
 		
-		if(0){
-			numwritten = numbytes;
-		}
-		else {
-			while (numwritten < numbytes){
-				n = ::write (fd, (buf + numwritten), (numbytes - numwritten));
-				
-				if (n < 0) return -1;
-				
-				if (0 == n){
-					numzeroes++;
-					
-					if (3 < numzeroes) break;
-				}
-				numwritten += n;
-			}
-		}
-		
-		if (1){
+		if (__K_SERIAL_DEBUG__){
 			printf ("cwrite[%d]: ", numbytes);
 			for (i = 0; i < numbytes; i++) printf ("%d ", buf[i]);
 			printf ("\n");
