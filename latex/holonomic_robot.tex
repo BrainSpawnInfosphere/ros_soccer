@@ -522,7 +522,7 @@ The robot utilizes the open source Robotic Operating System (ROS) \cite{ros}. Th
 
 \subsubsection{OpenCV}
 
-The vision system uses the Open Computer Vision (OpenCV \cite{opencv}) to ...
+The vision system uses the Open Computer Vision (OpenCV \cite{opencv}) is used to track the ball and guide the robot to the ball (visual servoing).
 
 \begin{figure*}[tb]
 	\begin{minipage}[htb]{3in}
@@ -537,6 +537,8 @@ The vision system uses the Open Computer Vision (OpenCV \cite{opencv}) to ...
 		\caption{\label{fig:hsv} HSV color cylinder.} 
  	\end{minipage} 
 \end{figure*}
+
+The BGR (blue, green, red) image is transformed to the HSV (hue, saturation, and value) system to help account for variable lighting conditions.
 
 \begin{description}
 	\item[Hue] The "attribute of a visual sensation according to which an area appears to be similar to one of the perceived colors: red, yellow, green, and blue, or to a combination of two of them"

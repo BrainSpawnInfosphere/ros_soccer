@@ -241,7 +241,7 @@ public:
     
     /**
      * Grabs a message from a serial port.
-     * 1. get start char '>'
+     * 1. get start char '<'
      * 2. gets message size (n) from database
      * 3. reads n bytes, return false if <e> is found
      * 4. get end char '>'
@@ -252,7 +252,9 @@ public:
     bool getMessageFromSerial(char m, std::string& msg){
         int size = 0;
         bool ok = getMessageSize(m,size); 
-            
+        
+        if(!ok) return false; // msg not found    
+        
         if(sim){
             if(stack.empty()) return false;
             else {
@@ -269,9 +271,6 @@ public:
             }
         }
         else {
-            
-            if(!ok) return false; // msg not found
-            
             ok = sp.readUntilChar('<');
             
             if(!ok) return false; // couldn't find start char

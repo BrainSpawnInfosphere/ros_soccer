@@ -102,7 +102,13 @@ public:
 	    return true;
 	}
 	
-	int readBytes(char *buf, const int numbytes){
+	/**
+	 * Read a specific number of bytes and put them into a buffer
+	 * \note readBytes() will attempt to read the serial port several
+	 *       times before failing
+	 * \return number of bytes read
+	 */
+	int readBytes(char *buf, const int numbytes, const int trys=3){
 		int i, numread = 0, n = 0, numzeroes = 0;
 		
 		while (numread < numbytes){
@@ -112,7 +118,7 @@ public:
 				return -1;
 			if (0 == n){
 				numzeroes++;
-				if (3 < numzeroes)
+				if (numzeroes > trys)
 					break;
 			}
 			numread += n;
@@ -129,7 +135,13 @@ public:
 		return numread;
 	}
 	
-	int write(const char* buf, const int numbytes){
+	/**
+	 * Write a specific number of bytes from a buffer
+	 * \note write() will attempt to read the serial port several
+	 *       times before failing
+	 * \return number of bytes written
+	 */
+	int write(const char* buf, const int numbytes, const int trys=3){
 		int i, numwritten = 0, n = 0, numzeroes = 0;
 		
 		//write (fd, (buf + numwritten), (numbytes - numwritten));
@@ -142,7 +154,7 @@ public:
             if (0 == n){
                 numzeroes++;
                 
-                if (3 < numzeroes) break;
+                if (numzeroes > trys) break;
             }
             numwritten += n;
         }
