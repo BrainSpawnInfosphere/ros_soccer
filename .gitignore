@@ -4,3 +4,4 @@ arch
 bin
 build
 msg_gen
+*.pyc

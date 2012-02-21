@@ -251,9 +251,13 @@ public:
      */
     bool getMessageFromSerial(char m, std::string& msg){
         int size = 0;
+        char c = 0; 
         bool ok = getMessageSize(m,size); 
         
-        if(!ok) return false; // msg not found    
+        if(!ok){
+            if(1) ROS_ERROR("Msg not found: %c",m);
+            return false; // msg not found
+        }
         
         if(sim){
             if(stack.empty()) return false;
@@ -273,39 +277,47 @@ public:
         else {
             ok = sp.readUntilChar('<');
             
-            if(!ok) return false; // couldn't find start char
-            memset(buffer,0,size); // only clear what we are using
-            //buffer[0] = '<';
-            //ROS_INFO("found <");
-            
-            char c = 0; /*
-            ok = sp.readByte(c);
-            //ROS_INFO("found 2: %c",c);
-        
-            if(!ok || m != c) return false; // wrong msg or bad read
-            buffer[1] = c;
-            ROS_INFO("good msg");
-            */
-            int cnt = 0;
-            while(cnt < size){
-                ok = sp.readByte(c);
-                if(!ok) return false; // bad read
-                if(cnt == 0) 
-                    if(c == 'e'){
-                        //ROS_INFO("Found error");
-                        sp.readByte(c); // read end char '>'
-                        return false;
-                    }
-                buffer[cnt++] = c; // change 1 -> 2 if add msg char
-                //ROS_INFO("found %d: %c",cnt,c);
+            if(!ok){
+                if(1) ROS_ERROR("Couldn't find start char for: %c",m);
+                return false; // couldn't find start char
             }
             
+            // get message char
             ok = sp.readByte(c);
-            if(!ok || c != '>') return false; // bad read or didn't find end char
-            //buffer[1+cnt++] = c;
+            if(ok && c == m);
+            else {
+                if(1) ROS_ERROR("message char's don't match: %c != %c",m,c);
+                return false;
+            }
             
-            msg.assign(buffer,size);
+            // get message body
+            if(size > 0){
+                memset(buffer,0,size); // only clear what we are using
+                int cnt = 0;
+                while(cnt < size){
+                    ok = sp.readByte(c);
+                    if(!ok){
+                        if(1) ROS_ERROR("Bad read for: %c",m);
+                        return false; // bad read
+                    }
+                    if(cnt == 0) 
+                        if(c == 'e'){
+                            //ROS_INFO("Found error");
+                            sp.readByte(c); // read end char '>'
+                            return false;
+                        }
+                    buffer[cnt++] = c; // change 1 -> 2 if add msg char
+                    //ROS_INFO("found %d: %c",cnt,c);
+                }
+                msg.assign(buffer,size);
+            }
             
+            // get end char
+            ok = sp.readByte(c);
+            if(!ok || c != '>'){
+                if(1) ROS_ERROR("No end char for: %c found %c",m,c);
+                return false; // bad read or didn't find end char
+            } 
         }
         
         return true;

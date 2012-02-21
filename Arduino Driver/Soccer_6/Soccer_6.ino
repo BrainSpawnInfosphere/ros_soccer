@@ -49,11 +49,12 @@ void allStop(){
 void setup()
 {
   // Start USB
-  Serial.begin(57600);
-  Serial.println("<START>");
+  Serial.begin(115200);
+  Serial.println("<g>"); // send go
   
   // Start Bluetooth
-  Serial1.begin(57600);
+  Serial1.begin(115200);
+  Serial1.println("<g>"); // send go
   
   // start-up motor drivers and set to stop
   motorAB.begin();
@@ -226,7 +227,7 @@ void loop()
     handleSerial(&Serial);
   }
   
-  while (Serial1.available()) { // Bluetooth
+  while (Serial1.available() >= 3) { // Bluetooth
     handleSerial(&Serial1);
     //Serial2.flush();
     //while(Serial

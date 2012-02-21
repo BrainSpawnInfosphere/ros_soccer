@@ -75,6 +75,8 @@
 
 #include "Serial.h"
 #include "kevin.h"
+#include "soccer/Imu.h"
+#include "soccer/Battery.h"
 
 using namespace kevin;
 
@@ -88,17 +90,17 @@ using namespace kevin;
 ///////////////////////////////////////////////////////////////////////////////
 //------------------------//
 // Robot commands
+#define CMD_START       'g' // <g>
 #define CMD_HALT        'h' // <h>
 #define CMD_MOTOR       'm' // <md0123> d=dir motor_number=0123
 #define CMD_PLAY_SOUND  'p' // <px> x=sound number
 #define CMD_RESET       'r' // <rx> x=battery(b), errors(e)
-#define CMD_START       's' // <s>
 #define CMD_SENSORS     's' // <s>
 #define CMD_VERSION     'v' // <v>
 
 //------------------------//
 // Size of data returns
-#define ALL_SENSORS_SIZE (20)
+#define ALL_SENSORS_SIZE 20
 
 #define BATTERY_CAPACITY (4.8*1000) // mAhrs
 #define BATTERY_VOLTAGE  4.8 // V
@@ -120,6 +122,7 @@ using namespace kevin;
 // \note uses OpenCV kalman filter
 // \note not thread safe
 ////////////////////////////////////////////////////////////////////
+/*
 class Navigation {
 public:
     Navigation(){;}
@@ -139,6 +142,8 @@ public:
     Eigen::Vector3d mags;
 };
 
+*/
+
 ////////////////////////////////////////////////////////////////////
 // SharedMemory is the generic repository of shared memory for the
 // robot. It's primary function is to transform data from bytes (int8)
@@ -155,35 +160,42 @@ public:
 
 public:    
     SharedMemory(void){        
-        //current_time = ros::Time::now();
-        //last_time = ros::Time::now();
+        last_time = ros::Time::now();
         
         reset();
 	}
 	
-    void reset(){
-        nav.reset();
-        power = 0.0;
+    void reset(){ // not sure this is useful in any way
     }
     
-    void set(std::string& data){
+    bool set(std::string& data){
+        // ensure we have the right amount of data
+        if(data.size() != 20) return false;
+        
+        // copy each byte into buffer_t struct
         for(unsigned int i=0;i<data.size();i++) mem.int8[i] = (byte) data[i];
-	    nav.accels(0) = mem.int16[0];
-	    nav.accels(1) = mem.int16[1];
-	    nav.accels(2) = mem.int16[2];
-	    nav.gyros(0) = mem.int16[3];
-	    nav.gyros(1) = mem.int16[4];
-	    nav.gyros(2) = mem.int16[5];
-	    nav.mags(0) = mem.int16[6];
-	    nav.mags(1) = mem.int16[7];
-	    nav.mags(2) = mem.int16[8];
-	    battV = mem.int16[9];
+        
+        // now grab int16 out and stuff into memory
+	    imu.accels.x = double(mem.int16[0])/1023.0;
+	    imu.accels.y = double(mem.int16[1])/1023.0;
+	    imu.accels.z = double(mem.int16[2])/1023.0;
 	    
-	    battA = 200; // [FIXME] insert current meter
+	    imu.gyros.x = double(mem.int16[3])/1023.0;
+	    imu.gyros.y = double(mem.int16[4])/1023.0;
+	    imu.gyros.z = double(mem.int16[5])/1023.0;
 	    
-	    //double dt = ((ros::Time::now() - last_time).toSec())/3600.0;
-	    //power += battV*battA*dt;
-	    //last_time = ros::Time::now();
+	    imu.mags.x = double(mem.int16[6])/1023.0;
+	    imu.mags.y = double(mem.int16[7])/1023.0;
+	    imu.mags.z = double(mem.int16[8])/1023.0;
+	    
+	    batt.volts = double(mem.int16[9])*5.0/1023;
+	    batt.amps = 0.2; // [FIXME] insert current meter
+	    
+	    ros::Duration dt = ros::Time::now() - last_time;
+	    batt.power += batt.volts*batt.amps*dt.toSec()/3600.0;
+	    last_time = ros::Time::now();
+	    
+	    return true;
 	}
 	
 	void test(){
@@ -201,18 +213,27 @@ public:
         exit(0);
 	}
     
-    double battV; // V
-    double battA; // mA
-    double power; // mWhr
+    //double battV; // V
+    //double battA; // mA
+    //double power; // Whr
     int drop;
     
-private:
+//private:
+    soccer::Imu imu;
+    soccer::Battery batt;
     buffer_t mem;
-    Navigation nav;
-	//ros::Time current_time, last_time;
+    //Navigation nav;
+	ros::Time last_time;
 };
 
-SharedMemory memory;
+bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
+    bool ans = false;
+    
+    ans = (a.linear.x == b.linear.x && a.linear.y == b.linear.y && a.linear.z == b.linear.z);
+    ans = ans && (a.angular.x == b.angular.x && a.angular.y == b.angular.y && a.angular.z == b.angular.z);
+     
+    return ans;
+}
 
 ////////////////////////////////////////////////////////////////////
 // cRobot is the hardware driver which handles all commands between 
@@ -221,15 +242,21 @@ SharedMemory memory;
 
 class cRobot {
 public:
-	cRobot(bool s=false) : phi(4,3), sp(s){
+	cRobot(ros::NodeHandle n, bool s=false) : phi(4,3), sp(s){
 		
 		// setup simple defaults
 		init(1.0,1.0,1.0, degToRad(45.0) );
 		
 		// setup message database
 		sp.setMessage('s',ALL_SENSORS_SIZE); // sensors
-		sp.setMessage('e',0); // error
+		sp.setMessage('e',0);  // error
 		sp.setMessage('v',20); // version
+		sp.setMessage('g',0);  // go
+		sp.setMessage('h',0);  // halt ... emergency stop
+		sp.setMessage('d',1); // drop sensor
+		
+		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
+		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
 	}
 	
 	~cRobot(void){
@@ -272,6 +299,8 @@ public:
 	
 	/**
 	 * Sends motor commands stored in desiredVelState to the robot.
+	 *
+	 * make pwm separate class/function
 	 */
 	bool sendControl(void){
 	    bool ret = true;
@@ -308,10 +337,6 @@ public:
 	    */
 	    return ret;
 	}
-    
-	// navigation
-	void resetOdometry(){;}
-	void resetPose(){;}
 	
 	void reset(){ sp.write("<r>"); }
 	
@@ -319,6 +344,8 @@ public:
 	 * Waits for a defined number of bytes before returning true. If
 	 * serial.available() fails missCnt number of times, then the 
 	 * funtion returns false.
+	 *
+	 * move to serial
 	 */
 	bool waitForData(unsigned int size, int missCnt=30){
 	    int cnt = 0;
@@ -340,32 +367,21 @@ public:
 	    
 	    std::string str("<s>");
 	    sp.write(str);
-	    waitForData(3); // wait for at least 3 bytes in input buffer
+	    waitForData(23); // wait for at least 3 bytes in input buffer
 	    
-	    //ROS_INFO("here we go ... ");
-	    /*
-	    ok = waitForData(ALL_SENSORS_SIZE);
-	    
-	    if(!ok){
-	        if( sp.available() >0){
-	            sp.readBytes(str, sp.available());
-	            ROS_ERROR("too small: %s",str.c_str());
-	        }
-	        sp.flush();
-	        return false;
-	    }
-	    */
 	    std::string data;
 	    
 	    ok = sp.getMessageFromSerial('s',data);
 	    
 	    if(!ok){
-	        //ROS_ERROR("Couldn't get Sensor Msg");
 	        sp.flush();
 	        return false;
 	    }
 	    
-	    //memory.set(data);
+	    memory.set(data);
+	    
+	    publishIMU();
+	    publishBattery();
 	    
 	    return ok;
 	    
@@ -388,6 +404,10 @@ public:
      */
     void cmdVelReceived(const geometry_msgs::Twist::ConstPtr& cmd_vel)
     {
+        // do we have this command already?
+        geometry_msgs::Twist a = *cmd_vel;
+        if(previous_twist == a) return;
+        
         // what should these limits be?
         double x = limit(cmd_vel->linear.x, -1.0, 1.0);
         double y = limit(cmd_vel->linear.y, -1.0, 1.0);
@@ -404,9 +424,22 @@ public:
 	    desiredVelStates(0) = x;
 	    desiredVelStates(1) = y;
 	    desiredVelStates(2) = z;
+	    
+	    previous_twist = *cmd_vel;
     }
-	
-	Navigation nav;
+    
+    bool ready(){
+        
+        for(int i=0;i<1000;i++){
+            if(sp.available() >= 3) break;
+            usleep(3000);
+        }
+        
+        std::string msg;
+        bool ok = sp.getMessageFromSerial('g',msg);
+        
+        return ok;
+    }
 
 protected:
 	
@@ -418,8 +451,23 @@ protected:
 		return true; 
 	}
 	
-	//SharedMemory mem;
-	//Navigation nav;
+	void publishIMU(){
+		memory.imu.header.stamp = ros::Time::now();
+		memory.imu.header.frame_id = "imu";
+		
+		//float a = (float) nav.gyaw * 180.0/M_PI;
+		
+		imu_pub.publish(memory.imu);
+    }
+	
+	void publishBattery(){
+		memory.batt.header.stamp = ros::Time::now();
+		memory.batt.header.frame_id = "battery";
+		
+		//float a = (float) nav.gyaw * 180.0/M_PI;
+		
+		battery_pub.publish(memory.batt);
+    }
 	
 	double mass;
 	double inertia; 
@@ -429,6 +477,12 @@ protected:
 	Eigen::Vector4d motorVel;
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
 	Serial sp; 
+	
+	geometry_msgs::Twist previous_twist;
+	ros::Publisher imu_pub;
+	ros::Publisher battery_pub;
+	
+    SharedMemory memory;
 };
 
 ////////////////////////////////////////////////////////////
@@ -445,8 +499,7 @@ int main( int argc, char** argv )
 	ros::NodeHandle n;
 	ros::Rate r(ROS_LOOP_RATE_HZ);
 	
-	bool sim = false; // simulation?
-	cRobot robot(sim);
+	cRobot robot(n,false);
 	
     //setup robot
     double mass = 5.0;   // mass
@@ -454,30 +507,52 @@ int main( int argc, char** argv )
     double inertia = mass*radius*radius; // inertia		
     robot.init(mass,inertia,radius, degToRad(45.0) );
     
-	int baud = 57600;
-	std::string port_name = "/dev/cu.usbserial-A7004IPE";
-	//n.param<std::string>("port", port_name, "/dev/cu.usbserial-A7004IPE");
-	//n.param<int>("baud", baud, 57600);
-    bool ok = robot.openSerialPort(port_name,baud);
+    /* Command line work TODO
+     - serial port
+     - run sim (T/F)
+     - debug (T/F)
+     */
+     std::string port;
+     
+     if(argc < 2) port.assign("/dev/cu.usbserial-A7004IPE");        
+     else port.assign(argv[1]);
+    
+    bool ok = robot.openSerialPort(port,115200);
     
     if(ok){
-        ROS_INFO("Opened serial port [%s]",port_name.c_str());
+        ROS_INFO("Opened serial port [%s]",port.c_str());
     }
     else{
-        ROS_FATAL("Couldn't open serial port [%s]",port_name.c_str());
+        ROS_FATAL("Couldn't open serial port [%s]",port.c_str());
         ROS_BREAK();
         return -1;
-        //serialPortOpen = true;
+    }
+    
+    // wait 1 sec to uC to get up and running
+    ok = robot.ready();
+    
+    if(ok){
+        ROS_INFO("ready");
+    }
+    else{
+        ROS_FATAL("something wrong ... exiting");
+        ROS_BREAK();
+        return -1;
     }
 	
 	///////////////////////////////////////////////
 	
+	/* TODO pub/sub
+	 - imu
+	 - sensors
+	 X twist command
+	 */
+	
 	// Publish ------------------------------------
-	ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("/odom", 50);
-	ros::Publisher imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
+	//ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("/odom", 50);
 	
 	// Publish transforms -------------------------
-	tf::TransformBroadcaster tf_broadcaster;
+	//tf::TransformBroadcaster tf_broadcaster;
 	
 	// Subcriptions -------------------------------
 	ros::Subscriber cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, &robot);
@@ -486,23 +561,17 @@ int main( int argc, char** argv )
 	current_time = ros::Time::now();
 	last_time = ros::Time::now();
 	
-	usleep(1000000);
-	
-	int cnt = 0;
-	
-	
-	
 	// Main Loop -- go until ^C terminates
-	while (ros::ok())
-	{
-	    if(cnt++ > 50) exit(1);
+	while (ros::ok()){
+	
+	    //if(cnt++ > 50) ros::shutdown(); //exit(1);
 	    
-	    ROS_INFO("loop");
+	    //ROS_INFO("loop");
 	    
 		// Main loop functions
 		ok = robot.getSensors();
 		if(!ok) ROS_ERROR("Couldn't get sensor data");
-		else ROS_INFO("got sensor data");
+		//else ROS_INFO("got sensor data");
 		
 		//handleDanger(sensors); // if fault conditions are seen, safe robot immediately
 		
@@ -511,7 +580,7 @@ int main( int argc, char** argv )
 		robot.sendControl();
 				
 		//////////////////////////////////////////////////////////////////////////
-#if 1
+#if 0
 		// ******************************************************************************************
 		//first, we'll publish the transforms over tf
 		geometry_msgs::TransformStamped odom_trans;
@@ -525,88 +594,8 @@ int main( int argc, char** argv )
 		tf_broadcaster.sendTransform(odom_trans);
 		
 #endif
-#if 0
-		
-		// ******************************************************************************************
-		// next, we'll publish the odometry message over ROS
-		// these are based off odometry readings only
-		nav_msgs::Odometry odom;
-		odom.header.stamp = current_time;
-		odom.header.frame_id = "odom";
-		odom.child_frame_id = "base_link";
-		
-		//set the position
-		odom.pose.pose.position.x = nav.x; // encoders
-		odom.pose.pose.position.y = nav.y; // encoders
-		odom.pose.pose.position.z = 0.0;
-		odom.pose.pose.orientation = tf::createQuaternionMsgFromYaw(nav.theta); // encoders
-		odom.pose.covariance[0] = 0.1;
-		odom.pose.covariance[8] = 0.1;
-		odom.pose.covariance[14] = 0.1;
-		odom.pose.covariance[20] = 0.1;
-		odom.pose.covariance[26] = 0.1;
-		odom.pose.covariance[32] = 0.1;
 
-		//set the velocity
-		odom.twist.twist.linear.x = nav.xdot; // encoders
-		odom.twist.twist.linear.y = nav.ydot; // encoders
-		odom.twist.twist.angular.z = nav.w; // ?
-		odom.twist.covariance[0] = 0.1;
-		odom.twist.covariance[8] = 0.1;
-		odom.twist.covariance[14] = 0.1;
-		odom.twist.covariance[20] = 0.1;
-		odom.twist.covariance[26] = 0.1;
-		odom.twist.covariance[32] = 0.1;
-		
-		//publish the message
-		odom_pub.publish(odom);
-	
-#endif
-#if 0
 
-		// ******************************************************************************************
-		//publish IMU
-		sensor_msgs::Imu imu;
-		imu.header.stamp = current_time;
-		imu.header.frame_id = "imu";
-		
-		//float a = (float) sensors.compass / 10.0f;
-		float a = (float) nav.gyaw * 180.0/M_PI;
-		
-		//ROS_INFO("compass [%.2f]",a);
-		
-		// IMU orientation estimate -- fix this
-		imu.orientation = tf::createQuaternionMsgFromYaw(a);
-		//imu.orientation = odom.pose.pose.orientation; // reuse quaternion calculation
-		//imu.orientation_covariance;
-		imu.orientation_covariance[0] = 0.01; //xx;
-		imu.orientation_covariance[4] = 0.01; //yy;
-		imu.orientation_covariance[8] = 0.01; //zz;
-		
-		// gyro
-		imu.angular_velocity.x = sensors.gyro_x;
-		imu.angular_velocity.y = sensors.gyro_y;
-		imu.angular_velocity.z = sensors.gyro_z;
-		
-		// from data sheet
-		imu.angular_velocity_covariance[0] = 0.01; //xx;
-		imu.angular_velocity_covariance[4] = 0.01; //yy;
-		imu.angular_velocity_covariance[8] = 0.01; //zz;
-		
-		// accel
-		imu.linear_acceleration.x = sensors.accel_x;
-		imu.linear_acceleration.y = sensors.accel_y;
-		imu.linear_acceleration.z = sensors.accel_z;
-		
-		// from data sheet
-		imu.linear_acceleration_covariance[0] = 0.01; //xx;
-		imu.linear_acceleration_covariance[4] = 0.01; //yy;
-		imu.linear_acceleration_covariance[8] = 0.01; //zz;
-		
-		imu_pub.publish(imu);
-		
-		// ******************************************************************************************
-#endif
 		ros::spinOnce();
 		r.sleep();
 	}

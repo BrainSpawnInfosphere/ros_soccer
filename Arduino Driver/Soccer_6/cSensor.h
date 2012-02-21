@@ -7,8 +7,8 @@
 #include <L3G4200D.h> // these don't help!! need to put in main.cpp file before cSensors.h
 #include <LSM303.h>
 
-//< a.x a.y a.z g.x g.y g.z m.x m.y m.z batt > = 20 bytes + 2 start/end = 22 
-#define STATUS_LEN 22
+//< s a.x a.y a.z g.x g.y g.z m.x m.y m.z batt > = 21 bytes + 2 start/end = 23 
+#define STATUS_LEN 23
 
 #define CURRENT_PIN 1
 #define BATT_PIN    0
@@ -55,7 +55,7 @@ public:
     p++;
     *p = 's';
     p++;
-    *p = 10; // 10 bytes
+    //*p = 10; // 10 bytes
     packBytes(p,(int)compass.a.x); 
     p+=sizeof(int);
     packBytes(p,(int)compass.a.y); 
