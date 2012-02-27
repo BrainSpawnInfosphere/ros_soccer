@@ -38,16 +38,14 @@
  * Status
  * X   All sensor msgs published
  * X   Teleop through Twist msg - simplistic, need better control
- * X   Publish TF for robot base
+ * O   Publish TF for robot base
  * O   Publish TF for sensors
  * O   RVIZ model
  * O   Integrate new I2C IMU (accel, gyo, compass) for use with EFK
- *        encoders - x,y,heading
- *        imu - roll,pitch,accel,gyro
- *        compass - heading
+ *        imu - accel,gyro
+ *        magnometer - heading
  * O   Enable timed events (beeps, lights) like wiimote
- * X   Enable simulation capability (random messages)
- * O   Enable simulation capability (dynamics)
+ * X   Enable simulation capability for serial
  * 
  *
  * Change Log:
@@ -110,7 +108,17 @@ using namespace kevin;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-
+// value???
+class Sensor {
+public:
+    Sensor();
+    
+    double convert(const int a){
+        double adc = 1023.0; // 10 bit
+        double gain = 0.3*5.0; // 300 mg/V
+        return ( gain*static_cast<double>(a)/adc );
+    }
+};
 
 
 ////////////////////////////////////////////////////////////////////
@@ -198,6 +206,8 @@ public:
 	    return true;
 	}
 	
+	// just a test, memory should read [256 1 256] if it
+	// is working.
 	void test(){
         mem.int8[0] = 0;
         mem.int8[1] = 1;
@@ -213,16 +223,12 @@ public:
         exit(0);
 	}
     
-    //double battV; // V
-    //double battA; // mA
-    //double power; // Whr
     int drop;
     
 //private:
     soccer::Imu imu;
     soccer::Battery batt;
     buffer_t mem;
-    //Navigation nav;
 	ros::Time last_time;
 };
 

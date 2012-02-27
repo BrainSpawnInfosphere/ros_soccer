@@ -20,8 +20,10 @@ public:
     pinMode(B0_pin, OUTPUT);
     pinMode(B1_pin, OUTPUT);
 
-    pinMode(reset_pin, OUTPUT);
-    digitalWrite(reset_pin, HIGH);
+    if(reset_pin){
+      pinMode(reset_pin, OUTPUT);
+      digitalWrite(reset_pin, HIGH);
+    }
   }
 
   void begin(){

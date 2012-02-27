@@ -87,8 +87,15 @@ void setMotors(byte dir, byte a, byte b, byte c, byte d){
 void getData(int size, char *buffer, HardwareSerial *serial){
   memset(buffer,0,size); // clear what we need
   
+  // does this add value??
+  int err = 0;
+  while(serial->available() < (size+1)){
+    if(err++ > 10) return;
+    delay(1);
+  }
+  
   for(int i=0;i<size;i++){
-    buffer[i++] = serial->read();
+    buffer[i] = serial->read();
   }
   
 }
@@ -99,8 +106,6 @@ boolean decodeMsg(HardwareSerial* serial){
   char sz;
   
   char msg = serial->read(); // get msg
-  
-  //if(msg == 's') sensors.read();
 
   switch(msg) {
   case 'p':
@@ -182,12 +187,19 @@ bool fillBuffer(HardwareSerial *serial){
   //serial->println(ascii);
   
   //while(ascii == '\n' || ascii == '\r') ascii = serial->read();
-  if(ascii != '<'){ 
-    Serial.print("fb: ");
-    Serial.println(ascii);
-    return false;
+  int err = 0;
+  while(ascii != '<'){
+    ascii = serial->read();
+    if(err++ > 10) return false; // 10 junk chars fail
   }
   
+  /*
+  if(ascii != '<'){ 
+    //Serial.print("fb: ");
+    //Serial.println(ascii);
+    return false;
+  }
+  */
   // could check for valid message: h,m,p,s .... 
   ok = decodeMsg(serial);
   if(!ok) return false;
@@ -231,8 +243,8 @@ void loop()
     handleSerial(&Serial1);
     //Serial2.flush();
     //while(Serial
-    Serial.print("BT");
-    Serial1.println("hi");
+    //Serial.print("BT");
+    //Serial1.println("hi");
   }
   
 }

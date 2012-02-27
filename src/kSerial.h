@@ -45,15 +45,11 @@
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
-//#include <sys/types.h>
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <termios.h>
-//#include <unistd.h>
 #include <fcntl.h>
-//#include <stdio.h>
-//#include <string.h>
 #include <stdexcept>   // for exception, runtime_error, out_of_range
 
 class kException : public std::runtime_error {
