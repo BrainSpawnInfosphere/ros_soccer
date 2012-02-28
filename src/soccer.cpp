@@ -71,10 +71,11 @@
 
 #include <Eigen/Dense>
 
-#include "Serial.h"
+#include "serial_node/serial.h"
 #include "kevin.h"
 #include "soccer/Imu.h"
 #include "soccer/Battery.h"
+
 
 using namespace kevin;
 
@@ -248,11 +249,11 @@ bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
 
 class cRobot {
 public:
-	cRobot(ros::NodeHandle n, bool s=false) : phi(4,3), sp(s){
+	cRobot(ros::NodeHandle n, bool s=false) : phi(4,3){
 		
 		// setup simple defaults
 		init(1.0,1.0,1.0, degToRad(45.0) );
-		
+		/*
 		// setup message database
 		sp.setMessage('s',ALL_SENSORS_SIZE); // sensors
 		sp.setMessage('e',0);  // error
@@ -260,13 +261,14 @@ public:
 		sp.setMessage('g',0);  // go
 		sp.setMessage('h',0);  // halt ... emergency stop
 		sp.setMessage('d',1); // drop sensor
-		
+		*/
 		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
 		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
+		client = n.serviceClient<serial_node::serial>("uc0_serial");
 	}
 	
 	~cRobot(void){
-	    if(sp.isOpened()) closeSerialPort();
+	    //if(sp.isOpened()) closeSerialPort();
     }
 	
 	void init(double m, double i, double r, double a){
@@ -303,6 +305,26 @@ public:
 	    return c;
 	}
 	
+	
+	void writeReturn(std::string& s, std::string& ret){
+	    serial_node::serial srv;
+        srv.request.str = s;
+        srv.request.size = 100;
+        srv.request.time = 10;
+        
+        client.call(srv);
+        
+        ret = srv.response.str;
+    }
+	
+	void writeNoReturn(std::string& s){
+	    serial_node::serial srv;
+        srv.request.str = s;
+        srv.request.size = 0;
+        srv.request.time = 0;
+        client.call(srv);
+    }
+	
 	/**
 	 * Sends motor commands stored in desiredVelState to the robot.
 	 *
@@ -324,27 +346,19 @@ public:
 	    buffer[6] = toPWM(motorVel(3));
 	    buffer[7] = '>';
 	    
-	    std::string str;
-        str.assign((char*)buffer,8);
-	    sp.write(str);
+	    serial_node::serial srv;
+        srv.request.str.assign((char*)buffer,8);
+        srv.request.size = 0;
+        srv.request.time = 0;
+        client.call(srv);
 	    
-	    usleep(1000); // wait for 1 msec
-	    
-	    sp.flush(); // shouldn't have to do this!
-	    
-	    /*
-	    std::string error;
-	    bool ok = sp.getMessageFromSerial('e',error);
-	    while(ok){
-	        ok = sp.getMessageFromSerial('e',error);
-	        ROS_INFO("control: got error");
-	        ret = false;
-	    }
-	    */
 	    return ret;
 	}
 	
-	void reset(){ sp.write("<r>"); }
+	void reset(){
+	    std::string s("<r>");
+	    writeNoReturn(s);
+    }
 	
 	/**
 	 * Waits for a defined number of bytes before returning true. If
@@ -353,6 +367,7 @@ public:
 	 *
 	 * move to serial
 	 */
+	 /*
 	bool waitForData(unsigned int size, int missCnt=30){
 	    int cnt = 0;
 	    bool ok = true;
@@ -366,23 +381,14 @@ public:
 	    
 	    return ok;
 	}
-	
+	*/
 	// sensors
 	bool getSensors(){
 	    bool ok = true;
-	    
-	    std::string str("<s>");
-	    sp.write(str);
-	    waitForData(23); // wait for at least 3 bytes in input buffer
-	    
 	    std::string data;
+	    std::string s = "<s>";
 	    
-	    ok = sp.getMessageFromSerial('s',data);
-	    
-	    if(!ok){
-	        sp.flush();
-	        return false;
-	    }
+	    writeReturn(s,data);
 	    
 	    memory.set(data);
 	    
@@ -391,18 +397,7 @@ public:
 	    
 	    return ok;
 	    
-	}
-	
-	// serial comm pass through to open the serial port
-	bool openSerialPort(std::string &port_name, int baud){
-    
-        try{ sp.open(port_name.c_str(), baud); }
-        //catch(cereal::Exception& e){ return false; }
-        catch(...){ return false; }
-        
-        return true;
-	}
-        
+	} 
         
     /**
      * Callback for receiving Twist messages from joystick or motion
@@ -435,7 +430,7 @@ public:
     }
     
     bool ready(){
-        
+        /*
         for(int i=0;i<1000;i++){
             if(sp.available() >= 3) break;
             usleep(3000);
@@ -443,19 +438,12 @@ public:
         
         std::string msg;
         bool ok = sp.getMessageFromSerial('g',msg);
-        
-        return ok;
+        */
+        return true;
     }
 
 protected:
 	
-	bool closeSerialPort(){
-	    std::string msg("<h>");
-	    ROS_INFO("Closed serial port");
-		sp.write(msg); // send stop command	
-		sp.close();
-		return true; 
-	}
 	
 	void publishIMU(){
 		memory.imu.header.stamp = ros::Time::now();
@@ -482,11 +470,11 @@ protected:
 	Eigen::Vector3d desiredVelStates; // [vx vy radius*w]
 	Eigen::Vector4d motorVel;
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
-	Serial sp; 
 	
 	geometry_msgs::Twist previous_twist;
 	ros::Publisher imu_pub;
 	ros::Publisher battery_pub;
+	ros::ServiceClient client;
 	
     SharedMemory memory;
 };
@@ -523,19 +511,9 @@ int main( int argc, char** argv )
      if(argc < 2) port.assign("/dev/cu.usbserial-A7004IPE");        
      else port.assign(argv[1]);
     
-    bool ok = robot.openSerialPort(port,115200);
-    
-    if(ok){
-        ROS_INFO("Opened serial port [%s]",port.c_str());
-    }
-    else{
-        ROS_FATAL("Couldn't open serial port [%s]",port.c_str());
-        ROS_BREAK();
-        return -1;
-    }
     
     // wait 1 sec to uC to get up and running
-    ok = robot.ready();
+    bool ok = robot.ready();
     
     if(ok){
         ROS_INFO("ready");
@@ -553,13 +531,6 @@ int main( int argc, char** argv )
 	 - sensors
 	 X twist command
 	 */
-	
-	// Publish ------------------------------------
-	//ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>("/odom", 50);
-	
-	// Publish transforms -------------------------
-	//tf::TransformBroadcaster tf_broadcaster;
-	
 	// Subcriptions -------------------------------
 	ros::Subscriber cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, &robot);
 	
