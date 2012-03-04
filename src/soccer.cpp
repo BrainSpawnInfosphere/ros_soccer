@@ -99,7 +99,8 @@ using namespace kevin;
 
 //------------------------//
 // Size of data returns
-#define ALL_SENSORS_SIZE 20
+#define ALL_SENSORS_SIZE 24
+#define VERSION_SIZE 14
 
 #define BATTERY_CAPACITY (4.8*1000) // mAhrs
 #define BATTERY_VOLTAGE  4.8 // V
@@ -179,10 +180,12 @@ public:
     
     bool set(std::string& data){
         // ensure we have the right amount of data
-        if(data.size() != 20) return false;
+        //if(data.size() != 20) return false;
         
         // copy each byte into buffer_t struct
-        for(unsigned int i=0;i<data.size();i++) mem.int8[i] = (byte) data[i];
+        // 0 1  2   3..23 24
+        // < s size  data >
+        for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
         
         // now grab int16 out and stuff into memory
 	    imu.accels.x = double(mem.int16[0])/1023.0;
@@ -242,6 +245,88 @@ bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
     return ans;
 }
 
+/**
+ * This is a simple db that maps message types to data sizes. This
+ * might be over kill ... could just do some DEFINE's to achive
+ * the same thing.
+ */
+class MessageDB {
+public:
+    MessageDB(){
+        ;
+    }
+    
+    void init(ros::NodeHandle n, std::string svc){
+		client = n.serviceClient<serial_node::serial>(svc);
+	}
+    
+    inline bool getMessage(std::string& str){
+        std::string ans;
+        return getMessage(str,ans);
+    }
+    
+    bool getMessage(std::string& str, std::string& ans){
+        
+        //ROS_INFO("sending: %s",str.c_str());
+        
+        // get the message character
+        char msg = str[1];
+        
+        int size = 0;
+        
+        // did we find the message and get its size?
+        if(!getMessageSize(msg,size)) return false;
+        //ROS_INFO("mdb: found msg size[%d]",size);
+        
+	    serial_node::serial srv;
+        srv.request.str = str;
+        srv.request.size = size;
+        srv.request.time = 100; // how do i do this?
+        
+        // did we get a response?
+        //if(!client.call(srv)) return false; // what does this return?
+        client.call(srv);
+        //ROS_INFO("mdb: call worked");
+        //ROS_INFO("mdb: resp: %s",srv.response.str.c_str());
+        
+        // if expecting data return ... copy string
+        if(size > 0) ans = srv.response.str;
+        
+        return true;
+    }
+    
+    /**
+     * Add message to database
+     */
+    void setMessage(char m, int size){
+        messages[m] = size;
+    }
+    
+    /**
+     * Returns the message size or if message is not found, returns false
+     */
+    bool getMessageSize(char m, int& size){
+        it = messages.find(m);
+        
+        if(it == messages.end()){
+            size = 0;
+            ROS_ERROR("Msg not found in database");
+            return false;
+        }
+        
+        size = it->second;
+        
+        return true;
+    }
+
+protected:
+    std::map<char,int> messages;  // database of valid message sizes
+    std::map<char,int>::iterator it; // database iterator
+    
+	ros::ServiceClient client;
+};
+
+
 ////////////////////////////////////////////////////////////////////
 // cRobot is the hardware driver which handles all commands between 
 // ROS and the robot.
@@ -249,27 +334,37 @@ bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
 
 class cRobot {
 public:
-	cRobot(ros::NodeHandle n, bool s=false) : phi(4,3){
+	cRobot(ros::NodeHandle n, std::string svc) : phi(4,3){
 		
 		// setup simple defaults
 		init(1.0,1.0,1.0, degToRad(45.0) );
-		/*
+		
 		// setup message database
-		sp.setMessage('s',ALL_SENSORS_SIZE); // sensors
-		sp.setMessage('e',0);  // error
-		sp.setMessage('v',20); // version
-		sp.setMessage('g',0);  // go
-		sp.setMessage('h',0);  // halt ... emergency stop
-		sp.setMessage('d',1); // drop sensor
-		*/
+		mdb.setMessage('d',1);  // drop sensor
+		mdb.setMessage('e',0);  // error
+		mdb.setMessage('g',0);  // go
+		mdb.setMessage('h',0);  // halt ... emergency stop
+		mdb.setMessage('m',0);  // motor commands
+		mdb.setMessage('s',ALL_SENSORS_SIZE); // sensors
+		mdb.setMessage('r',0);  // reset
+		mdb.setMessage('v',VERSION_SIZE); // version
+		mdb.init(n,svc);
+		
+		// Publish --------------------------------
 		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
 		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
-		client = n.serviceClient<serial_node::serial>("uc0_serial");
+		
+		// Services -------------------------------
+		//client = n.serviceClient<serial_node::serial>("uc0_serial");
+		
+	// Subcriptions -------------------------------
+	ros::Subscriber cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, this);
+	
 	}
 	
 	~cRobot(void){
 	    //if(sp.isOpened()) closeSerialPort();
-    }
+    }  
 	
 	void init(double m, double i, double r, double a){
 		angle = a;   // wheel angle (rads)
@@ -305,26 +400,6 @@ public:
 	    return c;
 	}
 	
-	
-	void writeReturn(std::string& s, std::string& ret){
-	    serial_node::serial srv;
-        srv.request.str = s;
-        srv.request.size = 100;
-        srv.request.time = 10;
-        
-        client.call(srv);
-        
-        ret = srv.response.str;
-    }
-	
-	void writeNoReturn(std::string& s){
-	    serial_node::serial srv;
-        srv.request.str = s;
-        srv.request.size = 0;
-        srv.request.time = 0;
-        client.call(srv);
-    }
-	
 	/**
 	 * Sends motor commands stored in desiredVelState to the robot.
 	 *
@@ -346,51 +421,33 @@ public:
 	    buffer[6] = toPWM(motorVel(3));
 	    buffer[7] = '>';
 	    
-	    serial_node::serial srv;
-        srv.request.str.assign((char*)buffer,8);
-        srv.request.size = 0;
-        srv.request.time = 0;
-        client.call(srv);
+	    std::string msg;
+	    msg.assign((char*)buffer,8);
+	    
+	    ret = mdb.getMessage(msg);
 	    
 	    return ret;
 	}
 	
 	void reset(){
 	    std::string s("<r>");
-	    writeNoReturn(s);
+	    //writeNoReturn(s);
+	    mdb.getMessage(s);
     }
 	
-	/**
-	 * Waits for a defined number of bytes before returning true. If
-	 * serial.available() fails missCnt number of times, then the 
-	 * funtion returns false.
-	 *
-	 * move to serial
-	 */
-	 /*
-	bool waitForData(unsigned int size, int missCnt=30){
-	    int cnt = 0;
-	    bool ok = true;
-	    while( sp.available() < size ){
-	        if(cnt++ > missCnt){
-	            ok = false;
-	            break; // not sure how big to make this??
-	        }
-	        usleep(100);
-	    }
-	    
-	    return ok;
-	}
-	*/
 	// sensors
 	bool getSensors(){
 	    bool ok = true;
 	    std::string data;
 	    std::string s = "<s>";
 	    
-	    writeReturn(s,data);
+	    ok = mdb.getMessage(s,data);
+	    if(!ok) ROS_ERROR("Error getting <s>");
 	    
-	    memory.set(data);
+	    ok = memory.set(data);
+	    //ROS_INFO("getSensors: %s",data.c_str());
+	    
+	    if(!ok) ROS_ERROR("Error formmatting data <s>");
 	    
 	    publishIMU();
 	    publishBattery();
@@ -430,17 +487,42 @@ public:
     }
     
     bool ready(){
-        /*
-        for(int i=0;i<1000;i++){
-            if(sp.available() >= 3) break;
-            usleep(3000);
-        }
+        std::string msg = "<v>";
+        std::string ans;
+        //bool ok = writeReturn(msg,ans,200,10);
+        bool ok = mdb.getMessage(msg,ans);
         
-        std::string msg;
-        bool ok = sp.getMessageFromSerial('g',msg);
-        */
-        return true;
+        std::cout<<(ok ? "true " : "false ")<<ans<<std::endl;
+        
+        return ok;
     }
+    
+    void loop(){
+        ros::Rate r(ROS_LOOP_RATE_HZ);
+
+        // Main Loop -- go until ^C terminates
+        while (ros::ok()){
+        
+            //if(cnt++ > 50) ros::shutdown(); //exit(1);
+            
+            //ROS_INFO("loop");
+            
+            // Main loop functions
+            bool ok = getSensors();
+            if(!ok) ROS_ERROR("Couldn't get sensor data");
+            //else ROS_INFO("got sensor data");
+            
+            //handleDanger(sensors); // if fault conditions are seen, safe robot immediately
+            
+            //navigation(sensors, nav);
+            
+            sendControl();
+    
+    
+            ros::spinOnce();
+            r.sleep();
+        }
+	}
 
 protected:
 	
@@ -450,6 +532,7 @@ protected:
 		memory.imu.header.frame_id = "imu";
 		
 		//float a = (float) nav.gyaw * 180.0/M_PI;
+		//ROS_INFO("imu");
 		
 		imu_pub.publish(memory.imu);
     }
@@ -474,9 +557,11 @@ protected:
 	geometry_msgs::Twist previous_twist;
 	ros::Publisher imu_pub;
 	ros::Publisher battery_pub;
-	ros::ServiceClient client;
+	//ros::ServiceClient client;
+	ros::Subscriber cmd_vel_sub;
 	
     SharedMemory memory;
+    MessageDB mdb;
 };
 
 ////////////////////////////////////////////////////////////
@@ -491,26 +576,17 @@ int main( int argc, char** argv )
 	ros::init(argc, argv, "soccer");
 	
 	ros::NodeHandle n;
-	ros::Rate r(ROS_LOOP_RATE_HZ);
+	std::string svc_name;
 	
-	cRobot robot(n,false);
+     if(argc < 2) svc_name = "uc0_serial";        
+     else svc_name.assign(argv[1]);
+	cRobot robot(n,svc_name);
 	
     //setup robot
     double mass = 5.0;   // mass
     double radius = 0.30;  // radius
     double inertia = mass*radius*radius; // inertia		
     robot.init(mass,inertia,radius, degToRad(45.0) );
-    
-    /* Command line work TODO
-     - serial port
-     - run sim (T/F)
-     - debug (T/F)
-     */
-     std::string port;
-     
-     if(argc < 2) port.assign("/dev/cu.usbserial-A7004IPE");        
-     else port.assign(argv[1]);
-    
     
     // wait 1 sec to uC to get up and running
     bool ok = robot.ready();
@@ -524,37 +600,10 @@ int main( int argc, char** argv )
         return -1;
     }
 	
-	///////////////////////////////////////////////
-	
-	/* TODO pub/sub
-	 - imu
-	 - sensors
-	 X twist command
-	 */
-	// Subcriptions -------------------------------
-	ros::Subscriber cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, &robot);
-	
-	ros::Time current_time, last_time;
-	current_time = ros::Time::now();
-	last_time = ros::Time::now();
-	
-	// Main Loop -- go until ^C terminates
-	while (ros::ok()){
-	
-	    //if(cnt++ > 50) ros::shutdown(); //exit(1);
-	    
-	    //ROS_INFO("loop");
-	    
-		// Main loop functions
-		ok = robot.getSensors();
-		if(!ok) ROS_ERROR("Couldn't get sensor data");
-		//else ROS_INFO("got sensor data");
-		
-		//handleDanger(sensors); // if fault conditions are seen, safe robot immediately
-		
-		//navigation(sensors, nav);
-		
-		robot.sendControl();
+	robot.loop();
+}
+
+
 				
 		//////////////////////////////////////////////////////////////////////////
 #if 0
@@ -571,11 +620,3 @@ int main( int argc, char** argv )
 		tf_broadcaster.sendTransform(odom_trans);
 		
 #endif
-
-
-		ros::spinOnce();
-		r.sleep();
-	}
-}
-
-
