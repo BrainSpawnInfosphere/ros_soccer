@@ -68,6 +68,7 @@
 #include <iostream>
 #include <sstream> // to concatonate c++ strings together
 #include <string> // C++ for CerealPort
+#include <math.h>
 
 #include <Eigen/Dense>
 
@@ -75,6 +76,7 @@
 #include "kevin.h"
 #include "soccer/Imu.h"
 #include "soccer/Battery.h"
+#include "MadgwickAHRS/MadgwickAHRS.h"
 
 
 using namespace kevin;
@@ -326,6 +328,9 @@ protected:
 	ros::ServiceClient client;
 };
 
+inline int psign(const double d){
+    return (d < 0.0 ? 0 : 1);
+}
 
 ////////////////////////////////////////////////////////////////////
 // cRobot is the hardware driver which handles all commands between 
@@ -353,12 +358,13 @@ public:
 		// Publish --------------------------------
 		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
 		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
+        ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
 		
 		// Services -------------------------------
 		//client = n.serviceClient<serial_node::serial>("uc0_serial");
 		
-	// Subcriptions -------------------------------
-	ros::Subscriber cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, this);
+        // Subcriptions -------------------------------
+        cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, this);
 	
 	}
 	
@@ -380,6 +386,10 @@ public:
 		       -sin(M_PI-angle), cos(M_PI-angle), 1.0,
 		       -sin(M_PI+angle), cos(M_PI+angle), 1.0,
 		       -sin(2.0*M_PI-angle), cos(2.0*M_PI-angle), 1.0;
+		
+		//std::cout<<phi<<std::endl;
+		
+		//exit(0);
 	}
 	
 	/**
@@ -389,13 +399,20 @@ public:
 	    byte c = 0;
 	    
 	    const double maxpwm = 255.0;
-	    const double maxv = 7.3304; // need to figure out max ... this is wrong
+	    //const double maxv = 7.3304; // need to figure out max ... this is wrong
 	    
-	    if(d>maxv) ROS_ERROR("toPWM: input too high");
+	    //if(d>maxv) ROS_ERROR("toPWM: input too high");
 	    
-	    double scaled = maxpwm*abs(d)/maxv;
+	    //double scaled = maxpwm*fabs(d)/maxv;
+	    double scaled = maxpwm*fabs(d);
+	    
+	    //std::cout<<d<<'\t'<<scaled<<std::endl;
 	    
 	    c = static_cast<byte>(scaled);
+	    //c = (unsigned char) scaled;
+	    
+	    // dead band -- too small and the motor whine
+	    c = (c < 40 ? 0 : c);
 	    
 	    return c;
 	}
@@ -407,10 +424,20 @@ public:
 	 */
 	bool sendControl(void){
 	    bool ret = true;
-	    motorVel = phi*desiredVelStates;
+	    Eigen::Vector4d m;
+	    m = phi*desiredVelStates;
+		
+		if( m == motorVel ) return true;
+		
+		motorVel = m;
+		
+		//std::cout<<"desired: "<<desiredVelStates<<std::endl;
+		//std::cout<<"ans: "<<phi*desiredVelStates<<std::endl;
+		//std::cout<<"motorVel: "<<motorVel<<std::endl;
+		//std::cout<<"sign 3: "<<(int)sign(motorVel(3))<<std::endl;
 	    
 	    // create message and send to uC
-	    byte dir = 0 | ((int)sign(motorVel(3))<<3 | (int)sign(motorVel(2))<<2 | (int)sign(motorVel(1))<<1 | (int)sign(motorVel(0)) );
+	    byte dir = 0 | (psign(motorVel(3))<<3 | psign(motorVel(2))<<2 | psign(motorVel(1))<<1 | psign(motorVel(0)) );
 	    byte buffer[8];
 	    buffer[0] = '<';
 	    buffer[1] = 'm';
@@ -420,6 +447,9 @@ public:
 	    buffer[5] = toPWM(motorVel(2));
 	    buffer[6] = toPWM(motorVel(3));
 	    buffer[7] = '>';
+	    
+	    //ROS_INFO("send cmd[%d]: %d %d %d %d", (int)buffer[2],
+	    //    (int)buffer[3],(int)buffer[4],(int)buffer[5],(int)buffer[6]);
 	    
 	    std::string msg;
 	    msg.assign((char*)buffer,8);
@@ -431,7 +461,6 @@ public:
 	
 	void reset(){
 	    std::string s("<r>");
-	    //writeNoReturn(s);
 	    mdb.getMessage(s);
     }
 	
@@ -455,13 +484,15 @@ public:
 	    return ok;
 	    
 	} 
-        
+    
     /**
      * Callback for receiving Twist messages from joystick or motion
      * planner.
      */
     void cmdVelReceived(const geometry_msgs::Twist::ConstPtr& cmd_vel)
     {
+        //ROS_INFO("got it!!");
+        
         // do we have this command already?
         geometry_msgs::Twist a = *cmd_vel;
         if(previous_twist == a) return;
@@ -476,27 +507,40 @@ public:
         //x = deadband(x,-band,band);
         //y = deadband(y,-band,band);
         
-        ROS_INFO("Got cmdVel: %g, %g, %g", x, y, z);
+        //ROS_INFO("Got cmdVel: %g, %g, %g", x, y, z);
         
         //setState(x,y,z);
 	    desiredVelStates(0) = x;
 	    desiredVelStates(1) = y;
 	    desiredVelStates(2) = z;
 	    
+		//std::cout<<phi<<std::endl;
+		//std::cout<<desiredVelStates<<std::endl;
+		//std::cout<<phi*desiredVelStates<<std::endl;
+	    
+	    //exit(0);
+	    
 	    previous_twist = *cmd_vel;
     }
     
+    /**
+     * Simple "is the robot ready" function ... cleans out serial buffer
+     */
     bool ready(){
         std::string msg = "<v>";
         std::string ans;
-        //bool ok = writeReturn(msg,ans,200,10);
         bool ok = mdb.getMessage(msg,ans);
         
-        std::cout<<(ok ? "true " : "false ")<<ans<<std::endl;
+        std::cout<<"\n+-------------------------------------------\n";
+        std::cout<<"|   Robot ready? "<<(ok ? "yes " : "no ")<<std::endl;
+        std::cout<<"\n+-------------------------------------------\n";
         
         return ok;
     }
     
+    /**
+     * The main robot loop
+     */
     void loop(){
         ros::Rate r(ROS_LOOP_RATE_HZ);
 
@@ -509,7 +553,7 @@ public:
             
             // Main loop functions
             bool ok = getSensors();
-            if(!ok) ROS_ERROR("Couldn't get sensor data");
+            if(!ok) ROS_ERROR("==[[ Couldn't get sensor data ]]==");
             //else ROS_INFO("got sensor data");
             
             //handleDanger(sensors); // if fault conditions are seen, safe robot immediately
@@ -517,8 +561,7 @@ public:
             //navigation(sensors, nav);
             
             sendControl();
-    
-    
+
             ros::spinOnce();
             r.sleep();
         }
@@ -531,17 +574,88 @@ protected:
 		memory.imu.header.stamp = ros::Time::now();
 		memory.imu.header.frame_id = "imu";
 		
-		//float a = (float) nav.gyaw * 180.0/M_PI;
-		//ROS_INFO("imu");
-		
 		imu_pub.publish(memory.imu);
+		
+		// ******************************************************************************************
+		//publish IMU
+		sensor_msgs::Imu imu;
+		imu.header.stamp = ros::Time::now();
+		imu.header.frame_id = "imu";
+		
+		//--- from design note for tilt compensated compass ---
+		double xm = memory.imu.mags.x;
+		double ym = memory.imu.mags.y;
+		double zm = memory.imu.mags.z;
+		double norm = sqrt(xm*xm+ym*ym+zm*zm);
+		xm /= norm;
+		ym /= norm;
+		zm /= norm;
+		
+		double xa = memory.imu.accels.x;
+		double ya = memory.imu.accels.y;
+		double za = memory.imu.accels.z;
+		norm = sqrt(xa*xa+ya*ya*za*za);
+		xa /= norm;
+		ya /= norm;
+		za /= norm;
+		
+		double pitch = asin(-xa);
+		double roll;
+		
+		if(pitch == M_PI/2.0 || pitch == -M_PI/2.0) roll = 0.0;
+		else roll = asin(ya/cos(pitch));
+		
+		double xh = xm*cos(pitch)+zm*sin(pitch);
+		double yh = xm*sin(roll)*sin(pitch)+ym*cos(roll)-zm*sin(roll)*cos(pitch);
+		double heading = atan2(yh,xh); // << not working right!!! [FIXME 20120312 kjw]
+		
+		ROS_INFO("RPY: %3.1f %3.1f %3.1f",roll*180.0/M_PI,pitch*180.0/M_PI,heading*180.0/M_PI);
+		
+		//--- end design note ---
+		
+		/* this doesn't work
+		MadgwickAHRSupdate(gx,gy,gz,xa,ya,ya,xm,ym,zm);
+		ROS_INFO("AHRS Quat: %g %g %g %g",q0,q1,q2,q3);
+		double r = atan2(2.0*q2*q3-2.0*q0*q1, 2.0*q0*q0+2.0*q3*q3-1.0);
+		double p = -asin(2.0*q1*q3+2.0*q0*q2);
+		double y = atan2(2.0*q1*q2-2.0*q0*q3, 2.0*q0*q0+2.0*q1*q1-1.0);
+		ROS_INFO("RPY: %g %g %g",r,p,y);
+		*/
+		
+
+		// IMU orientation estimate -- fix this
+		//imu.orientation = tf::createQuaternionMsgFromYaw(heading);
+		imu.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll,pitch,heading);
+		imu.orientation_covariance[0] = 0.01; //xx;
+		imu.orientation_covariance[4] = 0.01; //yy;
+		imu.orientation_covariance[8] = 0.01; //zz;
+		
+		// gyro
+		imu.angular_velocity.x = memory.imu.gyros.x;
+		imu.angular_velocity.y = memory.imu.gyros.y;
+		imu.angular_velocity.z = memory.imu.gyros.z;
+		
+		// from data sheet
+		imu.angular_velocity_covariance[0] = 0.01; //xx;
+		imu.angular_velocity_covariance[4] = 0.01; //yy;
+		imu.angular_velocity_covariance[8] = 0.01; //zz;
+		
+		// accel
+		imu.linear_acceleration.x = memory.imu.accels.x;
+		imu.linear_acceleration.y = memory.imu.accels.y;
+		imu.linear_acceleration.z = memory.imu.accels.z;
+		
+		// from data sheet +- 60 mg
+		imu.linear_acceleration_covariance[0] = 0.06; //xx;
+		imu.linear_acceleration_covariance[4] = 0.06; //yy;
+		imu.linear_acceleration_covariance[8] = 0.06; //zz;
+		
+		ros_imu_pub.publish(imu);
     }
 	
 	void publishBattery(){
 		memory.batt.header.stamp = ros::Time::now();
 		memory.batt.header.frame_id = "battery";
-		
-		//float a = (float) nav.gyaw * 180.0/M_PI;
 		
 		battery_pub.publish(memory.batt);
     }
@@ -550,6 +664,7 @@ protected:
 	double inertia; 
 	double radius; 
 	double angle;
+	
 	Eigen::Vector3d desiredVelStates; // [vx vy radius*w]
 	Eigen::Vector4d motorVel;
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
@@ -559,6 +674,7 @@ protected:
 	ros::Publisher battery_pub;
 	//ros::ServiceClient client;
 	ros::Subscriber cmd_vel_sub;
+	ros::Publisher ros_imu_pub;
 	
     SharedMemory memory;
     MessageDB mdb;
@@ -575,10 +691,11 @@ int main( int argc, char** argv )
 {
 	ros::init(argc, argv, "soccer");
 	
+	//ros::NodeHandle n("~");
 	ros::NodeHandle n;
 	std::string svc_name;
 	
-     if(argc < 2) svc_name = "uc0_serial";        
+     if(argc == 1) svc_name = "/uc0_serial";        
      else svc_name.assign(argv[1]);
 	cRobot robot(n,svc_name);
 	
@@ -599,6 +716,10 @@ int main( int argc, char** argv )
         ROS_BREAK();
         return -1;
     }
+    
+    // setup RPY
+    q0 = 1.0;
+    q1 = q2 = q3 = 0.0;
 	
 	robot.loop();
 }

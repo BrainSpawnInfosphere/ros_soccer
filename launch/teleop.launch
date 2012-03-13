@@ -1,0 +1,12 @@
+<launch>
+    <node pkg="touchosc_bridge" type="touchosc_bridge.py" name="touchosc_bridge" output="screen">
+        <param name="osc_name" value="ROS Teleop"/>
+        <param name="port" value="9000" />
+        <param name="print_fallback" value="True"/>
+        <param name="load_default" value="True"/>                                  
+		<param name="vibrate" value="False" />
+		<param name="tabpage_sub" value="False" />  
+        <rosparam param="handlers">[teleop]</rosparam>
+        <rosparam command="load" file="$(find teleop_handler)/cfg/teleop.yaml" />
+    </node>
+</launch>

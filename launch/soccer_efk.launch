@@ -1,0 +1,51 @@
+<!--
+Simple launch file that starts up my robot
+ - serial_node
+ - rososc
+ - soccer (robot)
+-->
+<launch>
+	<param name="layout_path" value="$(find soccer)/layouts" />
+    <rosparam param="layouts">
+        [ "teleop-ipod.touchosc", "teleop-ipad.touchosc" ]
+    </rosparam>
+    
+    <!-- serial node -->
+    <node pkg="serial_node" type="serial_node" name="serial" args="0 /dev/cu.usbserial-A7004IPE  9600 true" />
+    
+    <!-- Touch OSC user interface -->
+    <node pkg="touchosc_bridge" type="touchosc_bridge.py" name="touchosc_bridge" output="screen">
+        <param name="osc_name" value="teleop"/>
+        <param name="port" value="9000" />
+        <param name="print_fallback" value="True"/>
+        <param name="load_default" value="False"/>                                  
+		<param name="vibrate" value="False" />
+		<param name="tabpage_sub" value="False" />  
+		
+        <!--rosparam param="handlers">[teleop]</rosparam-->
+        <rosparam command="load" file="$(find soccer)/cfg/teleop.yaml" />
+    </node>
+    
+    <!-- Robot -->
+    <node pkg="soccer" type="soccer" name="soccer"/>
+    
+    <!-- Layout server -->
+    <node pkg="pytouchosc" type="layoutserver_node" name="layoutserver"/>
+    
+    <!-- Video Odometry -->
+    <node pkg= />
+    <node pkg="libviso2" type="mono_node" name="mono_node" args="?" _debug:=false" />
+    
+    <!-- Extended Kalman Filter -->
+    <node pkg="robot_pose_ekf" type="robot_pose_ekf" name="robot_pose_ekf">
+		<param name="output_frame" value="odom"/>
+		<param name="freq" value="20.0"/>
+		<param name="sensor_timeout" value="1.0"/>
+		<param name="publish_tf" value="true"/>
+		<param name="odom_used" value="false"/>
+		<param name="imu_used" value="true"/>
+		<param name="vo_used" value="true"/>
+		<param name="debug" value="false"/>
+		<param name="self_diagnose" value="false"/>
+	</node>
+</launch>

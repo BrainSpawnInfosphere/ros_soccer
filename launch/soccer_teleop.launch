@@ -1,0 +1,34 @@
+<!--
+Simple launch file that starts up my robot
+ - serial_node
+ - rososc
+ - soccer (robot)
+-->
+<launch>
+	<param name="layout_path" value="$(find soccer)/layouts" />
+    <rosparam param="layouts">
+        [ "teleop-ipod.touchosc", "teleop-ipad.touchosc" ]
+    </rosparam>
+    
+    <!-- serial node -->
+    <node pkg="serial_node" type="serial_node" name="serial" args="0 /dev/cu.usbserial-A7004IPE  9600" />
+    
+    <!-- Touch OSC user interface -->
+    <node pkg="touchosc_bridge" type="touchosc_bridge.py" name="touchosc_bridge" output="screen">
+        <param name="osc_name" value="teleop"/>
+        <param name="port" value="9000" />
+        <param name="print_fallback" value="True"/>
+        <param name="load_default" value="False"/>                                  
+		<param name="vibrate" value="False" />
+		<param name="tabpage_sub" value="False" />  
+		
+        <rosparam param="handlers">[teleop]</rosparam>
+        <rosparam command="load" file="$(find soccer)/cfg/teleop.yaml" />
+    </node>
+    
+    <!-- Robot -->
+    <node pkg="soccer" type="soccer" name="soccer"/>
+    
+    <!-- Layout server -->
+    <node pkg="pytouchosc" type="layoutserver_node" name="layoutserver"/>
+</launch>

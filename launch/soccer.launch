@@ -1,0 +1,13 @@
+<!--
+Simple launch file that starts up my robot
+ - serial_node
+ - rososc
+ - soccer (robot)
+-->
+<launch>
+    <!-- serial node -->
+    <node pkg="serial_node" type="serial_node" name="serial" args="0 /dev/cu.usbserial-A7004IPE  9600" />
+    
+    <!-- Robot -->
+    <node pkg="soccer" type="soccer" name="soccer"/>
+</launch>

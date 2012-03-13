@@ -1,7 +1,8 @@
 ################################
-# Battery Message
-# The robot tracks battery useage (low level) as far
-# as power used and level remaining
+# Raw IMU data
+#   Accelerometers[accels] - in g's
+#   Gyros[gyros] - in rads/sec
+#   Magnometers[mags] - in ?? 
 #
 Header header
 geometry_msgs/Vector3 accels	# accellerometers (g's)
