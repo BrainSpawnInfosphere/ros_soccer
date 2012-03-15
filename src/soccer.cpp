@@ -78,6 +78,8 @@
 #include "soccer/Battery.h"
 #include "MadgwickAHRS/MadgwickAHRS.h"
 
+#include "MessageDB.hpp"
+
 
 using namespace kevin;
 
@@ -111,18 +113,6 @@ using namespace kevin;
 #define ROS_LOOP_RATE_HZ 20
 
 ///////////////////////////////////////////////////////////////////////////////
-
-// value???
-class Sensor {
-public:
-    Sensor();
-    
-    double convert(const int a){
-        double adc = 1023.0; // 10 bit
-        double gain = 0.3*5.0; // 300 mg/V
-        return ( gain*static_cast<double>(a)/adc );
-    }
-};
 
 
 ////////////////////////////////////////////////////////////////////
@@ -169,8 +159,7 @@ public:
         short int16[10];
         byte int8[20];
     } buffer_t;
-
-public:    
+   
     SharedMemory(void){        
         last_time = ros::Time::now();
         
@@ -185,8 +174,8 @@ public:
         //if(data.size() != 20) return false;
         
         // copy each byte into buffer_t struct
-        // 0 1  2   3..23 24
-        // < s size  data >
+        // 0 1  2    3..23 24
+        // < s size  data  >
         for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
         
         // now grab int16 out and stuff into memory
@@ -246,87 +235,6 @@ bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
      
     return ans;
 }
-
-/**
- * This is a simple db that maps message types to data sizes. This
- * might be over kill ... could just do some DEFINE's to achive
- * the same thing.
- */
-class MessageDB {
-public:
-    MessageDB(){
-        ;
-    }
-    
-    void init(ros::NodeHandle n, std::string svc){
-		client = n.serviceClient<serial_node::serial>(svc);
-	}
-    
-    inline bool getMessage(std::string& str){
-        std::string ans;
-        return getMessage(str,ans);
-    }
-    
-    bool getMessage(std::string& str, std::string& ans){
-        
-        //ROS_INFO("sending: %s",str.c_str());
-        
-        // get the message character
-        char msg = str[1];
-        
-        int size = 0;
-        
-        // did we find the message and get its size?
-        if(!getMessageSize(msg,size)) return false;
-        //ROS_INFO("mdb: found msg size[%d]",size);
-        
-	    serial_node::serial srv;
-        srv.request.str = str;
-        srv.request.size = size;
-        srv.request.time = 100; // how do i do this?
-        
-        // did we get a response?
-        //if(!client.call(srv)) return false; // what does this return?
-        client.call(srv);
-        //ROS_INFO("mdb: call worked");
-        //ROS_INFO("mdb: resp: %s",srv.response.str.c_str());
-        
-        // if expecting data return ... copy string
-        if(size > 0) ans = srv.response.str;
-        
-        return true;
-    }
-    
-    /**
-     * Add message to database
-     */
-    void setMessage(char m, int size){
-        messages[m] = size;
-    }
-    
-    /**
-     * Returns the message size or if message is not found, returns false
-     */
-    bool getMessageSize(char m, int& size){
-        it = messages.find(m);
-        
-        if(it == messages.end()){
-            size = 0;
-            ROS_ERROR("Msg not found in database");
-            return false;
-        }
-        
-        size = it->second;
-        
-        return true;
-    }
-
-protected:
-    std::map<char,int> messages;  // database of valid message sizes
-    std::map<char,int>::iterator it; // database iterator
-    
-	ros::ServiceClient client;
-};
 
 inline int psign(const double d){
     return (d < 0.0 ? 0 : 1);
