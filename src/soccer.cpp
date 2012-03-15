@@ -79,6 +79,7 @@
 #include "MadgwickAHRS/MadgwickAHRS.h"
 
 #include "MessageDB.hpp"
+#include "SharedMemory.hpp"
 
 
 using namespace kevin;
@@ -143,89 +144,7 @@ public:
     Eigen::Vector3d gyros;
     Eigen::Vector3d mags;
 };
-
 */
-
-////////////////////////////////////////////////////////////////////
-// SharedMemory is the generic repository of shared memory for the
-// robot. It's primary function is to transform data from bytes (int8)
-// into shorts (int16) and keep track of all data sent from the robot.
-//
-// \note not thread safe
-////////////////////////////////////////////////////////////////////
-class SharedMemory {
-public:
-    typedef union {
-        short int16[10];
-        byte int8[20];
-    } buffer_t;
-   
-    SharedMemory(void){        
-        last_time = ros::Time::now();
-        
-        reset();
-	}
-	
-    void reset(){ // not sure this is useful in any way
-    }
-    
-    bool set(std::string& data){
-        // ensure we have the right amount of data
-        //if(data.size() != 20) return false;
-        
-        // copy each byte into buffer_t struct
-        // 0 1  2    3..23 24
-        // < s size  data  >
-        for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
-        
-        // now grab int16 out and stuff into memory
-	    imu.accels.x = double(mem.int16[0])/1023.0;
-	    imu.accels.y = double(mem.int16[1])/1023.0;
-	    imu.accels.z = double(mem.int16[2])/1023.0;
-	    
-	    imu.gyros.x = double(mem.int16[3])/1023.0;
-	    imu.gyros.y = double(mem.int16[4])/1023.0;
-	    imu.gyros.z = double(mem.int16[5])/1023.0;
-	    
-	    imu.mags.x = double(mem.int16[6])/1023.0;
-	    imu.mags.y = double(mem.int16[7])/1023.0;
-	    imu.mags.z = double(mem.int16[8])/1023.0;
-	    
-	    batt.volts = double(mem.int16[9])*5.0/1023;
-	    batt.amps = 0.2; // [FIXME] insert current meter
-	    
-	    ros::Duration dt = ros::Time::now() - last_time;
-	    batt.power += batt.volts*batt.amps*dt.toSec()/3600.0;
-	    last_time = ros::Time::now();
-	    
-	    return true;
-	}
-	
-	// just a test, memory should read [256 1 256] if it
-	// is working.
-	void test(){
-        mem.int8[0] = 0;
-        mem.int8[1] = 1;
-        mem.int8[2] = 1;
-        mem.int8[3] = 0;
-        mem.int8[4] = 0;
-        mem.int8[5] = 1;
-        ROS_INFO("Shared Memory Test [256 1 256]: %d %d %d",
-                    mem.int16[0],
-                    mem.int16[1],
-                    mem.int16[2]);
-        
-        exit(0);
-	}
-    
-    int drop;
-    
-//private:
-    soccer::Imu imu;
-    soccer::Battery batt;
-    buffer_t mem;
-	ros::Time last_time;
-};
 
 bool operator==(const geometry_msgs::Twist& a, const geometry_msgs::Twist& b){
     bool ans = false;
@@ -375,18 +294,22 @@ public:
 	// sensors
 	bool getSensors(){
 	    bool ok = true;
+	    #if 0
 	    std::string data;
 	    std::string s = "<s>";
 	    
 	    ok = mdb.getMessage(s,data);
 	    if(!ok) ROS_ERROR("Error getting <s>");
 	    
-	    ok = memory.set(data);
+	    ok = mdb.setSensorData(data);
 	    //ROS_INFO("getSensors: %s",data.c_str());
 	    
 	    if(!ok) ROS_ERROR("Error formmatting data <s>");
+	    #endif
 	    
-	    publishIMU();
+	    ok = mdb.getSensorData();
+	    
+	    publishIMU(); // should this be in mdb too??
 	    publishBattery();
 	    
 	    return ok;
@@ -479,10 +402,10 @@ protected:
 	
 	
 	void publishIMU(){
-		memory.imu.header.stamp = ros::Time::now();
-		memory.imu.header.frame_id = "imu";
+		mdb.imu.header.stamp = ros::Time::now();
+		mdb.imu.header.frame_id = "imu";
 		
-		imu_pub.publish(memory.imu);
+		imu_pub.publish(mdb.imu);
 		
 		// ******************************************************************************************
 		//publish IMU
@@ -491,17 +414,17 @@ protected:
 		imu.header.frame_id = "imu";
 		
 		//--- from design note for tilt compensated compass ---
-		double xm = memory.imu.mags.x;
-		double ym = memory.imu.mags.y;
-		double zm = memory.imu.mags.z;
+		double xm = mdb.imu.mags.x;
+		double ym = mdb.imu.mags.y;
+		double zm = mdb.imu.mags.z;
 		double norm = sqrt(xm*xm+ym*ym+zm*zm);
 		xm /= norm;
 		ym /= norm;
 		zm /= norm;
 		
-		double xa = memory.imu.accels.x;
-		double ya = memory.imu.accels.y;
-		double za = memory.imu.accels.z;
+		double xa = mdb.imu.accels.x;
+		double ya = mdb.imu.accels.y;
+		double za = mdb.imu.accels.z;
 		norm = sqrt(xa*xa+ya*ya*za*za);
 		xa /= norm;
 		ya /= norm;
@@ -539,9 +462,9 @@ protected:
 		imu.orientation_covariance[8] = 0.01; //zz;
 		
 		// gyro
-		imu.angular_velocity.x = memory.imu.gyros.x;
-		imu.angular_velocity.y = memory.imu.gyros.y;
-		imu.angular_velocity.z = memory.imu.gyros.z;
+		imu.angular_velocity.x = mdb.imu.gyros.x;
+		imu.angular_velocity.y = mdb.imu.gyros.y;
+		imu.angular_velocity.z = mdb.imu.gyros.z;
 		
 		// from data sheet
 		imu.angular_velocity_covariance[0] = 0.01; //xx;
@@ -549,9 +472,9 @@ protected:
 		imu.angular_velocity_covariance[8] = 0.01; //zz;
 		
 		// accel
-		imu.linear_acceleration.x = memory.imu.accels.x;
-		imu.linear_acceleration.y = memory.imu.accels.y;
-		imu.linear_acceleration.z = memory.imu.accels.z;
+		imu.linear_acceleration.x = mdb.imu.accels.x;
+		imu.linear_acceleration.y = mdb.imu.accels.y;
+		imu.linear_acceleration.z = mdb.imu.accels.z;
 		
 		// from data sheet +- 60 mg
 		imu.linear_acceleration_covariance[0] = 0.06; //xx;
@@ -562,10 +485,10 @@ protected:
     }
 	
 	void publishBattery(){
-		memory.batt.header.stamp = ros::Time::now();
-		memory.batt.header.frame_id = "battery";
+		mdb.batt.header.stamp = ros::Time::now();
+		mdb.batt.header.frame_id = "battery";
 		
-		battery_pub.publish(memory.batt);
+		battery_pub.publish(mdb.batt);
     }
 	
 	double mass;
@@ -580,12 +503,10 @@ protected:
 	geometry_msgs::Twist previous_twist;
 	ros::Publisher imu_pub;
 	ros::Publisher battery_pub;
-	//ros::ServiceClient client;
 	ros::Subscriber cmd_vel_sub;
 	ros::Publisher ros_imu_pub;
 	
-    SharedMemory memory;
-    MessageDB mdb;
+    SoccerMessageDB mdb;
 };
 
 ////////////////////////////////////////////////////////////
