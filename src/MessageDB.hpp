@@ -51,6 +51,7 @@
 
 #include <ros/ros.h>
 #include <std_msgs/String.h> // for simulation
+#include "serial_node/serial.h"
 
 #include <iostream>
 #include <string> 

@@ -57,30 +57,22 @@
  *
  */
 
+//--- ROS ----------------------------------
 #include <ros/ros.h>
-#include <tf/transform_broadcaster.h>         // transforms
-#include <nav_msgs/Odometry.h>                // odometry
-#include <geometry_msgs/Twist.h>              // command and velocity
-#include <geometry_msgs/Point.h>              // servo motors
-#include <sensor_msgs/Imu.h>                  // IMU messages
-#include <std_msgs/String.h> // for simulation
-
+#include <geometry_msgs/Twist.h>  // command and velocity
+//--- C++ ----------------------------------
 #include <iostream>
 #include <sstream> // to concatonate c++ strings together
 #include <string> // C++ for CerealPort
-#include <math.h>
-
+//--- Eigen --------------------------------
 #include <Eigen/Dense>
-
-#include "serial_node/serial.h"
+//--- Mine ---------------------------------
 #include "kevin.h"
 #include "soccer/Imu.h"
 #include "soccer/Battery.h"
+#include "SoccerMessageDB.hpp"
+//--- Other --------------------------------
 #include "MadgwickAHRS/MadgwickAHRS.h"
-
-#include "MessageDB.hpp"
-#include "SharedMemory.hpp"
-
 
 using namespace kevin;
 
@@ -183,9 +175,9 @@ public:
 		mdb.init(n,svc);
 		
 		// Publish --------------------------------
-		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
-		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
-        ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
+		//imu_pub = n.advertise<soccer::Imu>("/imu", 50);
+		//battery_pub = n.advertise<soccer::Battery>("/battery", 50);
+        //ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
 		
 		// Services -------------------------------
 		//client = n.serviceClient<serial_node::serial>("uc0_serial");
@@ -294,7 +286,8 @@ public:
 	// sensors
 	bool getSensors(){
 	    bool ok = true;
-	    #if 0
+	    
+	#if 0
 	    std::string data;
 	    std::string s = "<s>";
 	    
@@ -305,12 +298,12 @@ public:
 	    //ROS_INFO("getSensors: %s",data.c_str());
 	    
 	    if(!ok) ROS_ERROR("Error formmatting data <s>");
-	    #endif
+	#endif
 	    
 	    ok = mdb.getSensorData();
 	    
-	    publishIMU(); // should this be in mdb too??
-	    publishBattery();
+	    mdb.publishIMU(); // should this be in mdb too??
+	    mdb.publishBattery();
 	    
 	    return ok;
 	    
@@ -400,7 +393,7 @@ public:
 
 protected:
 	
-	
+	#if 0
 	void publishIMU(){
 		mdb.imu.header.stamp = ros::Time::now();
 		mdb.imu.header.frame_id = "imu";
@@ -490,6 +483,7 @@ protected:
 		
 		battery_pub.publish(mdb.batt);
     }
+	#endif
 	
 	double mass;
 	double inertia; 
@@ -501,10 +495,10 @@ protected:
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
 	
 	geometry_msgs::Twist previous_twist;
-	ros::Publisher imu_pub;
-	ros::Publisher battery_pub;
+	//ros::Publisher imu_pub;
+	//ros::Publisher battery_pub;
 	ros::Subscriber cmd_vel_sub;
-	ros::Publisher ros_imu_pub;
+	//ros::Publisher ros_imu_pub;
 	
     SoccerMessageDB mdb;
 };
@@ -553,20 +547,3 @@ int main( int argc, char** argv )
 	robot.loop();
 }
 
-
-				
-		//////////////////////////////////////////////////////////////////////////
-#if 0
-		// ******************************************************************************************
-		//first, we'll publish the transforms over tf
-		geometry_msgs::TransformStamped odom_trans;
-		odom_trans.header.stamp = current_time;
-		odom_trans.header.frame_id = "odom";
-		odom_trans.child_frame_id = "base_link";
-		odom_trans.transform.translation.x = robot.nav.pos(0);
-		odom_trans.transform.translation.y = robot.nav.pos(1);
-		odom_trans.transform.translation.z = 0.0;
-		odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(robot.nav.pos(2));
-		tf_broadcaster.sendTransform(odom_trans);
-		
-#endif
