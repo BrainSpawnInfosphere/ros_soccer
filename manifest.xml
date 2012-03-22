@@ -8,7 +8,7 @@
   <license>BSD</license>
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/soccer</url>
-  <depend package="cereal_port"/>
+  <!--depend package="cereal_port"/-->
   <depend package="roscpp"/>
   <depend package="tf"/>
   <!--depend package="glut"/-->

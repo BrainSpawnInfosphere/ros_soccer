@@ -69,7 +69,7 @@
 #include "soccer/Battery.h"
 //#include "MadgwickAHRS/MadgwickAHRS.h"
 
-#include "MessageDB.hpp"
+#include <serial_node/MessageDB.hpp>
 
 using namespace kevin;
 
