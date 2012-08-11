@@ -72,7 +72,7 @@
 #include "soccer/Battery.h"
 #include "SoccerMessageDB.hpp"
 //--- Other --------------------------------
-#include "MadgwickAHRS/MadgwickAHRS.h"
+//#include "MadgwickAHRS/MadgwickAHRS.h"
 
 using namespace kevin;
 
@@ -174,21 +174,13 @@ public:
 		mdb.setMessage('v',VERSION_SIZE); // version
 		mdb.init(n,svc);
 		
-		// Publish --------------------------------
-		//imu_pub = n.advertise<soccer::Imu>("/imu", 50);
-		//battery_pub = n.advertise<soccer::Battery>("/battery", 50);
-        //ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
-		
-		// Services -------------------------------
-		//client = n.serviceClient<serial_node::serial>("uc0_serial");
-		
         // Subcriptions -------------------------------
         cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, this);
 	
 	}
 	
 	~cRobot(void){
-	    //if(sp.isOpened()) closeSerialPort();
+	    ;
     }  
 	
 	void init(double m, double i, double r, double a){
@@ -287,23 +279,7 @@ public:
 	bool getSensors(){
 	    bool ok = true;
 	    
-	#if 0
-	    std::string data;
-	    std::string s = "<s>";
-	    
-	    ok = mdb.getMessage(s,data);
-	    if(!ok) ROS_ERROR("Error getting <s>");
-	    
-	    ok = mdb.setSensorData(data);
-	    //ROS_INFO("getSensors: %s",data.c_str());
-	    
-	    if(!ok) ROS_ERROR("Error formmatting data <s>");
-	#endif
-	    
 	    ok = mdb.getSensorData();
-	    
-	    mdb.publishIMU(); // should this be in mdb too??
-	    mdb.publishBattery();
 	    
 	    return ok;
 	    
@@ -377,12 +353,12 @@ public:
             
             // Main loop functions
             bool ok = getSensors();
-            if(!ok) ROS_ERROR("==[[ Couldn't get sensor data ]]==");
-            //else ROS_INFO("got sensor data");
-            
-            //handleDanger(sensors); // if fault conditions are seen, safe robot immediately
-            
-            //navigation(sensors, nav);
+            if(ok){
+                mdb.publishIMU();
+                mdb.publishBattery(); 
+                //ROS_INFO("got sensor data");
+            }
+            else ROS_ERROR("==[[ Couldn't get sensor data ]]==");
             
             sendControl();
 
@@ -392,99 +368,6 @@ public:
 	}
 
 protected:
-	
-	#if 0
-	void publishIMU(){
-		mdb.imu.header.stamp = ros::Time::now();
-		mdb.imu.header.frame_id = "imu";
-		
-		imu_pub.publish(mdb.imu);
-		
-		// ******************************************************************************************
-		//publish IMU
-		sensor_msgs::Imu imu;
-		imu.header.stamp = ros::Time::now();
-		imu.header.frame_id = "imu";
-		
-		//--- from design note for tilt compensated compass ---
-		double xm = mdb.imu.mags.x;
-		double ym = mdb.imu.mags.y;
-		double zm = mdb.imu.mags.z;
-		double norm = sqrt(xm*xm+ym*ym+zm*zm);
-		xm /= norm;
-		ym /= norm;
-		zm /= norm;
-		
-		double xa = mdb.imu.accels.x;
-		double ya = mdb.imu.accels.y;
-		double za = mdb.imu.accels.z;
-		norm = sqrt(xa*xa+ya*ya*za*za);
-		xa /= norm;
-		ya /= norm;
-		za /= norm;
-		
-		double pitch = asin(-xa);
-		double roll;
-		
-		if(pitch == M_PI/2.0 || pitch == -M_PI/2.0) roll = 0.0;
-		else roll = asin(ya/cos(pitch));
-		
-		double xh = xm*cos(pitch)+zm*sin(pitch);
-		double yh = xm*sin(roll)*sin(pitch)+ym*cos(roll)-zm*sin(roll)*cos(pitch);
-		double heading = atan2(yh,xh); // << not working right!!! [FIXME 20120312 kjw]
-		
-		ROS_INFO("RPY: %3.1f %3.1f %3.1f",roll*180.0/M_PI,pitch*180.0/M_PI,heading*180.0/M_PI);
-		
-		//--- end design note ---
-		
-		/* this doesn't work
-		MadgwickAHRSupdate(gx,gy,gz,xa,ya,ya,xm,ym,zm);
-		ROS_INFO("AHRS Quat: %g %g %g %g",q0,q1,q2,q3);
-		double r = atan2(2.0*q2*q3-2.0*q0*q1, 2.0*q0*q0+2.0*q3*q3-1.0);
-		double p = -asin(2.0*q1*q3+2.0*q0*q2);
-		double y = atan2(2.0*q1*q2-2.0*q0*q3, 2.0*q0*q0+2.0*q1*q1-1.0);
-		ROS_INFO("RPY: %g %g %g",r,p,y);
-		*/
-		
-
-		// IMU orientation estimate -- fix this
-		//imu.orientation = tf::createQuaternionMsgFromYaw(heading);
-		imu.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll,pitch,heading);
-		imu.orientation_covariance[0] = 0.01; //xx;
-		imu.orientation_covariance[4] = 0.01; //yy;
-		imu.orientation_covariance[8] = 0.01; //zz;
-		
-		// gyro
-		imu.angular_velocity.x = mdb.imu.gyros.x;
-		imu.angular_velocity.y = mdb.imu.gyros.y;
-		imu.angular_velocity.z = mdb.imu.gyros.z;
-		
-		// from data sheet
-		imu.angular_velocity_covariance[0] = 0.01; //xx;
-		imu.angular_velocity_covariance[4] = 0.01; //yy;
-		imu.angular_velocity_covariance[8] = 0.01; //zz;
-		
-		// accel
-		imu.linear_acceleration.x = mdb.imu.accels.x;
-		imu.linear_acceleration.y = mdb.imu.accels.y;
-		imu.linear_acceleration.z = mdb.imu.accels.z;
-		
-		// from data sheet +- 60 mg
-		imu.linear_acceleration_covariance[0] = 0.06; //xx;
-		imu.linear_acceleration_covariance[4] = 0.06; //yy;
-		imu.linear_acceleration_covariance[8] = 0.06; //zz;
-		
-		ros_imu_pub.publish(imu);
-    }
-	
-	void publishBattery(){
-		mdb.batt.header.stamp = ros::Time::now();
-		mdb.batt.header.frame_id = "battery";
-		
-		battery_pub.publish(mdb.batt);
-    }
-	#endif
-	
 	double mass;
 	double inertia; 
 	double radius; 
@@ -495,10 +378,7 @@ protected:
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
 	
 	geometry_msgs::Twist previous_twist;
-	//ros::Publisher imu_pub;
-	//ros::Publisher battery_pub;
 	ros::Subscriber cmd_vel_sub;
-	//ros::Publisher ros_imu_pub;
 	
     SoccerMessageDB mdb;
 };
@@ -541,8 +421,8 @@ int main( int argc, char** argv )
     }
     
     // setup RPY
-    q0 = 1.0;
-    q1 = q2 = q3 = 0.0;
+    //q0 = 1.0;
+    //q1 = q2 = q3 = 0.0;
 	
 	robot.loop();
 }

@@ -548,6 +548,20 @@ The BGR (blue, green, red) image is transformed to the HSV (hue, saturation, and
 
 \subsubsection{Point Cloud Library}
 
+point-cloud -> voxel_grid -> remove_planes -> segment -> match_model
+
+camera -> RGB->HSV -> model_histogram_match -> find_blob
+
+\subsubsection{Kalman Filter}
+
+\begin{description}
+	\item[Covariance Matrix]  a covariance matrix is a matrix whose element in the i, j position is the covariance between the i$^{th}$ and j$^{th}$ elements of a random vector (that is, of a vector of random variables). Each element of the vector is a scalar random variable, either with a finite number of observed empirical values or with a finite or infinite number of potential values specified by a theoretical joint probability distribution of all the random variables.
+	\item[RANSAC] is an abbreviation for "RANdom SAmple Consensus". It is an iterative method to estimate parameters of a mathematical model from a set of observed data which contains outliers. It is a non-deterministic algorithm in the sense that it produces a reasonable result only with a certain probability, with this probability increasing as more iterations are allowed. An advantage of RANSAC is its ability to do robust estimation of the model parameters, i.e., it can estimate the parameters with a high degree of accuracy even when a significant number of outliers are present in the data set. A disadvantage of RANSAC is that there is no upper bound on the time it takes to compute these parameters. The algorithm was first published by Fischler and Bolles in 1981.The RANSAC algorithm is often used in computer vision, e.g., to simultaneously solve the correspondence problem and estimate the fundamental matrix related to a pair of stereo cameras.
+	\item[Point Feature Histogram] (PFH) representation is based on the relationships between the points in Pk2 and their normals. Simply put, it attempts to capture as best as possible the sampled surface variations by taking into account all the interactions between the directions of the estimated normals. The resultant hyperspace is thus dependent on the quality of the surface normal estimations at each point. 
+	\item[Fast Point Feature Histograms] (FPFH), reduces the computational complexity of the algorithm to O(nk), while still retaining most of the discriminative power of the PFH.
+	
+\end{description}
+
 \section{Results}
 
 \section{References}

@@ -51,8 +51,10 @@ endif(OpenGL_FOUND)
 
 rosbuild_add_executable(soccer src/soccer.cpp src/MadgwickAHRS/MadgwickAHRS.c)
 rosbuild_add_executable(soccer_sim src/soccer_sim.cpp)
-rosbuild_add_executable(soccer_gui src/soccer_gui.cpp)
-rosbuild_add_executable(ahrs src/nodes/ahrs.cpp src/MadgwickAHRS/MadgwickAHRS.c)
-target_link_libraries(soccer_gui  ${GLUT_LIBRARY} ${OPENGL_LIBRARY})
+#rosbuild_add_executable(ahrs src/nodes/ahrs.cpp src/MadgwickAHRS/MadgwickAHRS.c)
+#rosbuild_add_executable(soccer_gui src/soccer_gui.cpp)
+#target_link_libraries(soccer_gui  ${GLUT_LIBRARY} ${OPENGL_LIBRARY})
 #set(CMAKE_EXE_LINKER_FLAGS "-framework OpenGL -framework GLUT")
+
+rosbuild_add_executable(make_bag src/make_bag.cpp)
 

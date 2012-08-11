@@ -17,6 +17,10 @@
   <depend package="sensor_msgs"/>
   <depend package="std_msgs"/>
   <depend package="serial_node"/>
+  <depend package="rosbag"/>
+  <depend package="cv_bridge"/>
+  <depend package="camera_info_manager"/>
+  <depend package="image_transport"/>
 
 </package>
 

@@ -10,4 +10,7 @@ Simple launch file that starts up my robot
     
     <!-- Robot -->
     <node pkg="soccer" type="soccer" name="soccer"/>
+    
+    <!-- Camera -->
+    <!-- node pkg="camera_node" type="opencv_cam" name="opencv_cam" output="screen" args=" -source http://admin:dlink@192.168.1.151/video.cgi?.mjpg" / -->
 </launch>

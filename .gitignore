@@ -6,3 +6,8 @@ build
 msg_gen
 *.pyc
 old
+*.aux
+*.log
+*.out
+*.gz
+holonomic_robot.pdf
