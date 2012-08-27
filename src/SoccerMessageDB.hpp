@@ -97,7 +97,7 @@ public:
 		// Publish --------------------------------
 		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
 		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
-        ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
+        //ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
 	    
         reset();
 	}
@@ -132,17 +132,21 @@ public:
         for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
         
         // now grab int16 out and stuff into memory
-	    imu.accels.x = double(mem.int16[0])/1023.0;
-	    imu.accels.y = double(mem.int16[1])/1023.0;
-	    imu.accels.z = double(mem.int16[2])/1023.0;
+        // All of these are 2's complement numbers ... loose 1b to sign
+	    // covert to g's, imu set to 2 g's max, 11b number (+-2047) 1b sign
+	    imu.accels.x = double(mem.int16[0])/2047.0*2.0;
+	    imu.accels.y = double(mem.int16[1])/2047.0*2.0;
+	    imu.accels.z = double(mem.int16[2])/2047.0*2.0;
 	    
-	    imu.gyros.x = double(mem.int16[3])/1023.0;
-	    imu.gyros.y = double(mem.int16[4])/1023.0;
-	    imu.gyros.z = double(mem.int16[5])/1023.0;
+	    // covert to rads/sec, imu set to 250 dps max, 15b number (+-32767) 1b sign
+	    imu.gyros.x = double(mem.int16[3])*M_PI/180.0/32767.0*250.0;
+	    imu.gyros.y = double(mem.int16[4])*M_PI/180.0/32767.0*250.0;
+	    imu.gyros.z = double(mem.int16[5])*M_PI/180.0/32767.0*250.0;
 	    
-	    imu.mags.x = double(mem.int16[6])/1023.0;
-	    imu.mags.y = double(mem.int16[7])/1023.0;
-	    imu.mags.z = double(mem.int16[8])/1023.0;
+	    // covert to gauss, imu set to 1.3 gauss max, 11b number (+-2047) 1b sign
+	    imu.mags.x = double(mem.int16[6])/2047.0*1.3;
+	    imu.mags.y = double(mem.int16[7])/2047.0*1.3;
+	    imu.mags.z = double(mem.int16[8])/2047.0*1.3;
 	    
 	    batt.volts = double(mem.int16[9])*5.0/1023;
 	    batt.amps = 0.2; // [FIXME] insert current meter
@@ -193,7 +197,8 @@ public:
 		imu.header.frame_id = "imu";
 		
 		imu_pub.publish(imu);
-		
+
+#if 0		
 		// ******************************************************************************************
 		//publish IMU
 		sensor_msgs::Imu simu;
@@ -269,6 +274,7 @@ public:
 		simu.linear_acceleration_covariance[8] = 0.06; //zz;
 		
 		ros_imu_pub.publish(simu);
+#endif
     }
 	
 	void publishBattery(){

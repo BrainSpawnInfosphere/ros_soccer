@@ -90,21 +90,24 @@ public:
     Serial.println((int)compass.a.z);
 
     Serial.print("Mag: "); 
-    Serial.print((int)compass.m.x);
+    Serial.print(compass.m.x);
     Serial.print(" ");
-    Serial.print((int)compass.m.y);
+    Serial.print(compass.m.y);
     Serial.print(" ");
-    Serial.println((int)compass.m.z);
+    Serial.println(compass.m.z);
 
     Serial.print("Gyro: ");
-    Serial.print((int)gyro.g.x);
+    Serial.print(gyro.g.x);
     Serial.print(" ");
-    Serial.print((int)gyro.g.y);
+    Serial.print(gyro.g.y);
     Serial.print(" ");
-    Serial.println((int)gyro.g.z);
+    Serial.println(gyro.g.z);
+    
+    Serial.print("Gyro temp: ");
+    Serial.println(gyro.temp);
     
     Serial.print("Battery: ");
-    Serial.println((int)batt);
+    Serial.println((int)batt); 
   }
 
   bool read(){

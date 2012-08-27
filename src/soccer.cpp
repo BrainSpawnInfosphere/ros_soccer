@@ -71,8 +71,6 @@
 #include "soccer/Imu.h"
 #include "soccer/Battery.h"
 #include "SoccerMessageDB.hpp"
-//--- Other --------------------------------
-//#include "MadgwickAHRS/MadgwickAHRS.h"
 
 using namespace kevin;
 
