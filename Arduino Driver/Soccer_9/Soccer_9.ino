@@ -5,6 +5,8 @@
 #include <Wire.h>
 #include <L3G.h>     // <L3G4200D.h>
 #include <LSM303.h>  // <LSM303.h>
+#include <CmdMessenger.h>
+
 
 #include "cTone.h"
 #include "TB6612FNG.h"

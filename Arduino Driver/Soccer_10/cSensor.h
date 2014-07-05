@@ -24,8 +24,9 @@ public:
   }
 
   void init(){
-    gyro.enableDefault();
-    compass.init();
+    gyro.init(L3G4200D_DEVICE,L3G_SA0_HIGH); // sa0 is pulled high by default
+    gyro.enableDefault(); 
+    compass.init(LSM303DLM_DEVICE,LSM303_SA0_A_LOW); // sa0 is pulled low by default
     compass.enableDefault();
   }
 
@@ -77,37 +78,16 @@ public:
     return (char*)buffer;
   }
 
-  void printIMU(void){
+  // debug output
+  void ascii(String &msg){  
     read();
 
-    Serial.println("----------------------");
-
-    Serial.print("Accel: ");
-    Serial.print(compass.a.x);
-    Serial.print(" ");
-    Serial.print(compass.a.y);
-    Serial.print(" ");
-    Serial.println((int)compass.a.z);
-
-    Serial.print("Mag: "); 
-    Serial.print(compass.m.x);
-    Serial.print(" ");
-    Serial.print(compass.m.y);
-    Serial.print(" ");
-    Serial.println(compass.m.z);
-
-    Serial.print("Gyro: ");
-    Serial.print(gyro.g.x);
-    Serial.print(" ");
-    Serial.print(gyro.g.y);
-    Serial.print(" ");
-    Serial.println(gyro.g.z);
-    
-    Serial.print("Gyro temp: ");
-    Serial.println(gyro.temp);
-    
-    Serial.print("Battery: ");
-    Serial.println((int)batt); 
+    msg = "----------------------\n";
+    msg += "Accel: " + String(compass.a.x) + " " + String(compass.a.y) + " " + String(compass.a.z) + '\n';
+    msg += "Mag: " + String(compass.m.x) + " " + String(compass.m.y) + " " + String(compass.m.z) + '\n';
+    msg += "Gyro: " + String(gyro.g.x) + " " + String(gyro.g.y) + " " + String(gyro.g.z) + '\n';
+    msg += "Temp: " + String(gyro.readTemperature()) + '\n';
+    msg += "Batt: " + String(batt) + '\n';
   }
 
   bool read(){
@@ -120,13 +100,11 @@ public:
 
 private:
   byte buffer[STATUS_LEN];
+  //char tbuff[128];
 
-  L3G4200D gyro;
+  L3G gyro;
   LSM303 compass;
-
-  //int accel_x, accel_y, accel_z;
-  //int mag_x, mag_y, mag_z;
-  //int gyro_x, gyro_y, gyro_z, ref;
+  
   int batt;
   //int ir0,ir1,ir2;
   //byte bump;  // <xxxxx L C R>

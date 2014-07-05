@@ -104,7 +104,7 @@ public:
     Serial.println(gyro.g.z);
     
     Serial.print("Gyro temp: ");
-    Serial.println(gyro.temp);
+    //Serial.println(gyro.temp);
     
     Serial.print("Battery: ");
     Serial.println((int)batt); 
@@ -121,7 +121,7 @@ public:
 private:
   byte buffer[STATUS_LEN];
 
-  L3G4200D gyro;
+  L3G gyro;
   LSM303 compass;
 
   //int accel_x, accel_y, accel_z;

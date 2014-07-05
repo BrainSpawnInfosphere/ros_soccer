@@ -56,20 +56,22 @@
 //#include <geometry_msgs/Twist.h>              // command and velocity
 //#include <geometry_msgs/Point.h>              // servo motors
 #include <sensor_msgs/Imu.h>                  // IMU messages
+#include <sensor_msgs/MagneticField.h>        // Compass messages
 #include <std_msgs/String.h> // for simulation
 
 #include <iostream>
 #include <string>
+#include <string.h>
 #include <math.h>
 
 //#include <Eigen/Dense>
 
 #include "kevin.h"
-#include "soccer/Imu.h"
+//#include "soccer/Imu.h"
 #include "soccer/Battery.h"
 //#include "MadgwickAHRS/MadgwickAHRS.h"
 
-#include <serial_node/MessageDB.hpp>
+#include "MessageDB.hpp"
 
 using namespace kevin;
 
@@ -94,11 +96,6 @@ public:
 	void init(ros::NodeHandle n, std::string svc){
 	    MessageDB::init(n,svc);
 	    
-		// Publish --------------------------------
-		imu_pub = n.advertise<soccer::Imu>("/imu", 50);
-		battery_pub = n.advertise<soccer::Battery>("/battery", 50);
-        //ros_imu_pub = n.advertise<sensor_msgs::Imu>("/imu_data", 50);
-	    
         reset();
 	}
 	
@@ -106,47 +103,83 @@ public:
         last_time = ros::Time::now();
     }
     
-    bool getSensorData(){
+	tf::Quaternion magneticRPY(const sensor_msgs::MagneticField& mag, const sensor_msgs::Imu& imu){
+		
+		//--- from design note for tilt compensated compass ---
+		double xm = mag.magnetic_field.x;
+		double ym = mag.magnetic_field.y;
+		double zm = mag.magnetic_field.z;
+		double norm = sqrt(xm*xm+ym*ym+zm*zm);
+		xm /= norm;
+		ym /= norm;
+		zm /= norm;
+		
+		double xa = imu.linear_acceleration.x;
+		double ya = imu.linear_acceleration.y;
+		double za = imu.linear_acceleration.z;
+		norm = sqrt(xa*xa+ya*ya*za*za);
+		xa /= norm;
+		ya /= norm;
+		za /= norm;
+		
+		double pitch = asin(-xa);
+		double roll;
+		
+		if(pitch == M_PI/2.0 || pitch == -M_PI/2.0) roll = 0.0;
+		else roll = asin(ya/cos(pitch));
+		
+		double xh = xm*cos(pitch)+zm*sin(pitch);
+		double yh = xm*sin(roll)*sin(pitch)+ym*cos(roll)-zm*sin(roll)*cos(pitch);
+		double heading = atan2(yh,xh); // << not working right!!! [FIXME 20120312 kjw]
+		
+		ROS_INFO("RPY: %3.1f %3.1f %3.1f",roll*180.0/M_PI,pitch*180.0/M_PI,heading*180.0/M_PI);
+		
+		// FIXME
+		tf::Quaternion q; // = tf::createQuaternionMsgFromRollPitchYaw(roll,pitch,heading);
+		//tf::createQuaternionMsgFromYaw(heading);
+		
+		return q;
+	}
+	
+    bool getSensorData(sensor_msgs::Imu& imu, sensor_msgs::MagneticField& mag,
+    		soccer::Battery& batt, unsigned int& drop){
+    		
 	    std::string data;
 	    std::string s = "<s>";
 	    
 	    bool ok = getMessage(s,data);
-	    if(!ok) ROS_ERROR("Error getting <s>");
+	    if(!ok) return false;
 	    
-	    ok = setSensorData(data);
-	    //ROS_INFO("getSensors: %s",data.c_str());
+	    // FIXME[] check valid message format !!!
 	    
-	    if(!ok) ROS_ERROR("Error formmatting data <s>");
-	    
-	    return ok;
-    }
-        
-    
-    bool setSensorData(std::string& data){
         // ensure we have the right amount of data
         //if(data.size() != 20) return false;
         
         // copy each byte into buffer_t struct
         // 0 1  2   3..23 24
         // < s size  data >
-        for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
+        //for(unsigned int i=0;i<20;i++) mem.int8[i] = (byte) data[3+i];
+        memcpy(&mem,&data[3],20);
         
         // now grab int16 out and stuff into memory
         // All of these are 2's complement numbers ... loose 1b to sign
 	    // covert to g's, imu set to 2 g's max, 11b number (+-2047) 1b sign
-	    imu.accels.x = double(mem.int16[0])/2047.0*2.0;
-	    imu.accels.y = double(mem.int16[1])/2047.0*2.0;
-	    imu.accels.z = double(mem.int16[2])/2047.0*2.0;
+	    imu.linear_acceleration.x = double(mem.int16[0])/2047.0*2.0;
+	    imu.linear_acceleration.y = double(mem.int16[1])/2047.0*2.0;
+	    imu.linear_acceleration.z = double(mem.int16[2])/2047.0*2.0;
 	    
 	    // covert to rads/sec, imu set to 250 dps max, 15b number (+-32767) 1b sign
-	    imu.gyros.x = double(mem.int16[3])*M_PI/180.0/32767.0*250.0;
-	    imu.gyros.y = double(mem.int16[4])*M_PI/180.0/32767.0*250.0;
-	    imu.gyros.z = double(mem.int16[5])*M_PI/180.0/32767.0*250.0;
+	    imu.angular_velocity.x = double(mem.int16[3])*M_PI/180.0/32767.0*250.0;
+	    imu.angular_velocity.y = double(mem.int16[4])*M_PI/180.0/32767.0*250.0;
+	    imu.angular_velocity.z = double(mem.int16[5])*M_PI/180.0/32767.0*250.0;
 	    
 	    // covert to gauss, imu set to 1.3 gauss max, 11b number (+-2047) 1b sign
-	    imu.mags.x = double(mem.int16[6])/2047.0*1.3;
-	    imu.mags.y = double(mem.int16[7])/2047.0*1.3;
-	    imu.mags.z = double(mem.int16[8])/2047.0*1.3;
+	    mag.magnetic_field.x = double(mem.int16[6])/2047.0*1.3;
+	    mag.magnetic_field.y = double(mem.int16[7])/2047.0*1.3;
+	    mag.magnetic_field.z = double(mem.int16[8])/2047.0*1.3;
+	    
+		// fixme:
+		//imu.orientation = magneticRPY(mag,imu);
 	    
 	    batt.volts = double(mem.int16[9])*5.0/1023;
 	    batt.amps = 0.2; // [FIXME] insert current meter
@@ -155,25 +188,8 @@ public:
 	    batt.power += batt.volts*batt.amps*dt.toSec()/3600.0;
 	    last_time = ros::Time::now();
 	    
-	    	
-		//////////////////////////////////////////////////////////////////////////
-#if 0
-		// ******************************************************************************************
-		//first, we'll publish the transforms over tf
-		geometry_msgs::TransformStamped odom_trans;
-		odom_trans.header.stamp = current_time;
-		odom_trans.header.frame_id = "odom";
-		odom_trans.child_frame_id = "base_link";
-		odom_trans.transform.translation.x = robot.nav.pos(0);
-		odom_trans.transform.translation.y = robot.nav.pos(1);
-		odom_trans.transform.translation.z = 0.0;
-		odom_trans.transform.rotation = tf::createQuaternionMsgFromYaw(robot.nav.pos(2));
-		tf_broadcaster.sendTransform(odom_trans);
-		
-#endif
-	    
-	    return true;
-	}
+	    return ok;
+    }
 	
 	// just a test, memory should read [256 1 256] if it
 	// is working.
@@ -192,109 +208,21 @@ public:
         exit(0);
 	}
     
-    void publishIMU(){
-		imu.header.stamp = ros::Time::now();
-		imu.header.frame_id = "imu";
-		
-		imu_pub.publish(imu);
-
-#if 0		
-		// ******************************************************************************************
-		//publish IMU
-		sensor_msgs::Imu simu;
-		simu.header.stamp = ros::Time::now();
-		simu.header.frame_id = "imu";
-		
-		//--- from design note for tilt compensated compass ---
-		double xm = imu.mags.x;
-		double ym = imu.mags.y;
-		double zm = imu.mags.z;
-		double norm = sqrt(xm*xm+ym*ym+zm*zm);
-		xm /= norm;
-		ym /= norm;
-		zm /= norm;
-		
-		double xa = imu.accels.x;
-		double ya = imu.accels.y;
-		double za = imu.accels.z;
-		norm = sqrt(xa*xa+ya*ya*za*za);
-		xa /= norm;
-		ya /= norm;
-		za /= norm;
-		
-		double pitch = asin(-xa);
-		double roll;
-		
-		if(pitch == M_PI/2.0 || pitch == -M_PI/2.0) roll = 0.0;
-		else roll = asin(ya/cos(pitch));
-		
-		double xh = xm*cos(pitch)+zm*sin(pitch);
-		double yh = xm*sin(roll)*sin(pitch)+ym*cos(roll)-zm*sin(roll)*cos(pitch);
-		double heading = atan2(yh,xh); // << not working right!!! [FIXME 20120312 kjw]
-		
-		ROS_INFO("RPY: %3.1f %3.1f %3.1f",roll*180.0/M_PI,pitch*180.0/M_PI,heading*180.0/M_PI);
-		
-		//--- end design note ---
-		
-		/* this doesn't work
-		MadgwickAHRSupdate(gx,gy,gz,xa,ya,ya,xm,ym,zm);
-		ROS_INFO("AHRS Quat: %g %g %g %g",q0,q1,q2,q3);
-		double r = atan2(2.0*q2*q3-2.0*q0*q1, 2.0*q0*q0+2.0*q3*q3-1.0);
-		double p = -asin(2.0*q1*q3+2.0*q0*q2);
-		double y = atan2(2.0*q1*q2-2.0*q0*q3, 2.0*q0*q0+2.0*q1*q1-1.0);
-		ROS_INFO("RPY: %g %g %g",r,p,y);
-		*/
-		
-
-		// IMU orientation estimate -- fix this
-		//imu.orientation = tf::createQuaternionMsgFromYaw(heading);
-		simu.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll,pitch,heading);
-		simu.orientation_covariance[0] = 0.01; //xx;
-		simu.orientation_covariance[4] = 0.01; //yy;
-		simu.orientation_covariance[8] = 0.01; //zz;
-		
-		// gyro
-		simu.angular_velocity.x = imu.gyros.x;
-		simu.angular_velocity.y = imu.gyros.y;
-		simu.angular_velocity.z = imu.gyros.z;
-		
-		// from data sheet
-		simu.angular_velocity_covariance[0] = 0.01; //xx;
-		simu.angular_velocity_covariance[4] = 0.01; //yy;
-		simu.angular_velocity_covariance[8] = 0.01; //zz;
-		
-		// accel
-		simu.linear_acceleration.x = imu.accels.x;
-		simu.linear_acceleration.y = imu.accels.y;
-		simu.linear_acceleration.z = imu.accels.z;
-		
-		// from data sheet +- 60 mg
-		simu.linear_acceleration_covariance[0] = 0.06; //xx;
-		simu.linear_acceleration_covariance[4] = 0.06; //yy;
-		simu.linear_acceleration_covariance[8] = 0.06; //zz;
-		
-		ros_imu_pub.publish(simu);
-#endif
-    }
-	
-	void publishBattery(){
-		batt.header.stamp = ros::Time::now();
-		batt.header.frame_id = "battery";
-		
-		battery_pub.publish(batt);
-    }
+    
     
 protected:    
     
-    int drop;
+    //unsigned short drop; // drop sensors
     
-	ros::Publisher imu_pub;
-	ros::Publisher battery_pub;
-	ros::Publisher ros_imu_pub;
+	//ros::Publisher imu_pub;
+	//ros::Publisher battery_pub;
+	//ros::Publisher ros_imu_pub;
     
-    soccer::Imu imu;
-    soccer::Battery batt;
-    buffer_t mem;
+    //sensor_msgs::Imu imu;
+    //sensor_msgs::MagneticField mag;
+    //sensor_msgs::Imu imu;
+    //soccer::Battery batt;
+    buffer_t mem; // this is a union I defined
 	ros::Time last_time;
 };
 

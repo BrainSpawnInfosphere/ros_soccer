@@ -1,60 +1,68 @@
 cmake_minimum_required(VERSION 2.8.3)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
-include($ENV{ROS_ROOT}/core/rosbuild/FindPkgConfig.cmake)
+project(soccer)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+###
+# catkin_make -DCMAKE_INSTALL_PREFIX=/Users/kevin/catkin/install install
+###
 
-rosbuild_init()
+find_package(catkin REQUIRED COMPONENTS 
+   roscpp 
+   rospy 
+   geometry_msgs 
+   sensor_msgs 
+   tf 
+   std_msgs 
+#   ip_serial 
+   nav_msgs 
+   message_generation
+)
 
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+find_package(PkgConfig)
+find_package(Boost REQUIRED COMPONENTS signals program_options)
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
-#uncomment if you have defined messages
-rosbuild_genmsg()
-#uncomment if you have defined services
-#rosbuild_gensrv()
+  # Declare the message files to be built
+  add_message_files(FILES
+    Battery.msg
+  )
 
-#common commands for building c++ executables and libraries
-#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
-#target_link_libraries(${PROJECT_NAME} another_library)
-#rosbuild_add_boost_directories()
-#rosbuild_link_boost(${PROJECT_NAME} thread)
-#rosbuild_add_executable(example examples/example.cpp)
-#target_link_libraries(example ${PROJECT_NAME})
+  # Actually generate the language-specific message and service files
+  generate_messages(DEPENDENCIES geometry_msgs std_msgs sensor_msgs)
+
+## Declare things to be passed to other projects
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES ${PROJECT_NAME}
+  CATKIN_DEPENDS roscpp geometry_msgs sensor_msgs tf std_msgs nav_msgs
+  DEPENDS Boost # other-3rd-party-libraries
+)
+
+## Specify additional locations of header files
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 
+################ EIGEN3 ##############################
 pkg_check_modules(EIGEN3 REQUIRED eigen3)
 if(EIGEN3_FOUND)
 	message("======== FOUND Eigen ${EIGEN3_VERSION} =============")
 	include_directories(${EIGEN3_INCLUDE_DIRS})
 endif(EIGEN3_FOUND)
 
-
-find_package(GLUT)
-if(GLUT_FOUND)
-	message("======== FOUND Glut ${GLUT_VERSION} =============")
-endif(GLUT_FOUND)
-
-find_package(OpenGL)
-if(OpenGL_FOUND)
-	message("======== FOUND OpenGL ${OpenGL_VERSION} =============")
-endif(OpenGL_FOUND)
+# Code -----------------
+add_executable(soccer src/soccer.cpp)
+target_link_libraries(soccer ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+add_dependencies(soccer soccer_gencpp) # this will build the msgs/srv
 
 
-rosbuild_add_executable(soccer src/soccer.cpp src/MadgwickAHRS/MadgwickAHRS.c)
-rosbuild_add_executable(soccer_sim src/soccer_sim.cpp)
-#rosbuild_add_executable(ahrs src/nodes/ahrs.cpp src/MadgwickAHRS/MadgwickAHRS.c)
-#rosbuild_add_executable(soccer_gui src/soccer_gui.cpp)
-#target_link_libraries(soccer_gui  ${GLUT_LIBRARY} ${OPENGL_LIBRARY})
-#set(CMAKE_EXE_LINKER_FLAGS "-framework OpenGL -framework GLUT")
+## Mark executables and/or libraries for installation
+ install(TARGETS ${PROJECT_NAME}
+   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+ )
 
-rosbuild_add_executable(make_bag src/make_bag.cpp)
-
+## Mark cpp header files for installation
+# install(DIRECTORY include/${PROJECT_NAME}/
+#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+#   FILES_MATCHING PATTERN "*.h"
+#   PATTERN ".svn" EXCLUDE
+# )

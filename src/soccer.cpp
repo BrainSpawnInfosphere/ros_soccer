@@ -56,6 +56,33 @@
  * http://www.youtube.com/watch?v=NT7nYv9Ri2Y&context=C4e37f68ADvjVQa1PpcFO6Pj8ytKf2_rlRBQvbKDdFK33HWQ1yD94=
  *
  */
+ 
+ 
+/**
+
+SEE README.MD FOR LATEST INFO
+
+* All messaging is initiated from Computer to uC - one way, with a return ACK
+* All Cmd messages return an ACK with or without data. 
+* If there is an error, the ACK is <e> or <E>
+
+Test: rosservice call /uc0_serial "<v>" 
+
+(Cmd)		Cmd		(ACK)		ACK
+Computer	Size	uC			Size	Description
++-----------------------------------------------------------------+
+Any Msg		X		<e>			0		If something went wrong on uC, otherwise normal msg
+Any Msg		X		<E>			0		If something went wrong on ip_serial, otherwise normal msg
+<h>			0		<h>			0		Halt motors
+<msxxxxx>	5		<m>			0		Motor commands
+<psx>		1		<p>			0		Play sound
+<r>			0		<r>			0		Reset
+<s>			0		<ssxx...xx>	20		Sensor values (a,g,m,b,ir,batt,...)
+<S>			0		<Ssxx...xx>	X		Status, sends error msgs ... value??
+<t>			0		<t>			0		Motor test, just turns them
+<v>			0		<vsxx...xx>	10		SW version
++-----------------------------------------------------------------+
+**/
 
 //--- ROS ----------------------------------
 #include <ros/ros.h>
@@ -68,9 +95,10 @@
 #include <Eigen/Dense>
 //--- Mine ---------------------------------
 #include "kevin.h"
-#include "soccer/Imu.h"
-#include "soccer/Battery.h"
+//#include "soccer/Imu.h"
+//#include "soccer/Battery.h"
 #include "SoccerMessageDB.hpp"
+#include "SoccerPublisher.hpp"
 
 using namespace kevin;
 
@@ -94,14 +122,13 @@ using namespace kevin;
 
 //------------------------//
 // Size of data returns
-#define ALL_SENSORS_SIZE 24
-#define VERSION_SIZE 14
+//#define ALL_SENSORS_SIZE 20 
 
 #define BATTERY_CAPACITY (4.8*1000) // mAhrs
 #define BATTERY_VOLTAGE  4.8 // V
 
 //------------------------//
-#define ROS_LOOP_RATE_HZ 20
+#define ROS_LOOP_RATE_HZ 5
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -149,6 +176,28 @@ inline int psign(const double d){
     return (d < 0.0 ? 0 : 1);
 }
 
+/*
+inline char makeReadable(char c){
+    return (c < 32 ? '.' : (c > 126 ? '.' : c));
+}
+*/
+/*
+void printMsg(std::string& msg){
+    std::cout<<"---[[ "<<msg[1]<<" ]]-----------------------------------"<<std::endl;
+    std::cout<<"Size data: "<<(int)msg[2]<<"\t"<<"Size Msg: "<<msg.size()<<std::endl;
+    std::cout<<"Start/End characters: "<<msg[0]<<" / "<<msg[msg.size()-1]<<std::endl;
+    int size = (int)msg[2];
+    if(size > 0){
+        std::cout<<"Raw:  ";
+        for(int i=0;i<size;i++) std::cout<<(unsigned short)msg[3+i]<<' ';
+        std::cout<<std::endl;
+        std::cout<<"ASCII: ";
+        for(int i=0;i<size;i++) std::cout<<makeReadable(msg[3+i])<<' ';
+        std::cout<<std::endl;
+    }
+    std::cout<<"-------------------------------------------"<<std::endl;
+}
+*/
 ////////////////////////////////////////////////////////////////////
 // cRobot is the hardware driver which handles all commands between 
 // ROS and the robot.
@@ -167,14 +216,15 @@ public:
 		mdb.setMessage('g',0);  // go
 		mdb.setMessage('h',0);  // halt ... emergency stop
 		mdb.setMessage('m',0);  // motor commands
-		mdb.setMessage('s',ALL_SENSORS_SIZE); // sensors
+		mdb.setMessage('s',20); // sensors
 		mdb.setMessage('r',0);  // reset
-		mdb.setMessage('v',VERSION_SIZE); // version
+		mdb.setMessage('v',10); // version
 		mdb.init(n,svc);
 		
         // Subcriptions -------------------------------
-        cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, &cRobot::cmdVelReceived, this);
+        //cmd_vel_sub  = n.subscribe<geometry_msgs::Twist>("/cmd0", 1, &cRobot::cmdVelReceived, this);
 	
+
 	}
 	
 	~cRobot(void){
@@ -199,6 +249,28 @@ public:
 		//std::cout<<phi<<std::endl;
 		
 		//exit(0);
+		
+		//--- Messages ------------------------------------------------
+		
+		// best guess
+		imu.orientation_covariance[0] = 0.01; //xx;
+		imu.orientation_covariance[4] = 0.01; //yy;
+		imu.orientation_covariance[8] = 0.01; //zz;
+		
+		// from data sheet
+		imu.angular_velocity_covariance[0] = 0.01; //xx;
+		imu.angular_velocity_covariance[4] = 0.01; //yy;
+		imu.angular_velocity_covariance[8] = 0.01; //zz;
+		
+		// from data sheet +- 60 mg
+		imu.linear_acceleration_covariance[0] = 0.06; //xx;
+		imu.linear_acceleration_covariance[4] = 0.06; //yy;
+		imu.linear_acceleration_covariance[8] = 0.06; //zz;
+		
+		// ???
+		mag.magnetic_field_covariance[0] = 0.01; //xx;
+		mag.magnetic_field_covariance[4] = 0.01; //yy;
+		mag.magnetic_field_covariance[8] = 0.01; //zz;
 	}
 	
 	/**
@@ -247,39 +319,82 @@ public:
 	    
 	    // create message and send to uC
 	    byte dir = 0 | (psign(motorVel(3))<<3 | psign(motorVel(2))<<2 | psign(motorVel(1))<<1 | psign(motorVel(0)) );
-	    byte buffer[8];
+	    byte buffer[9];
 	    buffer[0] = '<';
 	    buffer[1] = 'm';
-	    buffer[2] = dir;
-	    buffer[3] = toPWM(motorVel(0));
-	    buffer[4] = toPWM(motorVel(1));
-	    buffer[5] = toPWM(motorVel(2));
-	    buffer[6] = toPWM(motorVel(3));
-	    buffer[7] = '>';
+	    buffer[2] = 5;
+	    buffer[3] = dir;
+	    buffer[4] = toPWM(motorVel(0));
+	    buffer[5] = toPWM(motorVel(1));
+	    buffer[6] = toPWM(motorVel(2));
+	    buffer[7] = toPWM(motorVel(3));
+	    buffer[8] = '>';
 	    
-	    //ROS_INFO("send cmd[%d]: %d %d %d %d", (int)buffer[2],
-	    //    (int)buffer[3],(int)buffer[4],(int)buffer[5],(int)buffer[6]);
+	    //ROS_INFO("sendControl() %c %c %d %d %d %d %d %d %c", (char)buffer[0], (char)buffer[1], (int)buffer[2], (int)buffer[3],
+	    //    (int)buffer[4],(int)buffer[5],(int)buffer[6],(int)buffer[7],(char)buffer[8]);
 	    
 	    std::string msg;
-	    msg.assign((char*)buffer,8);
+	    msg.assign((char*)buffer,9);
 	    
-	    ret = mdb.getMessage(msg);
+	    //ROS_INFO("message: %s",msg.c_str());
 	    
-	    return ret;
+	    std::string ans;
+	    //printMsg(msg);
+	    ret = mdb.getMessage(msg,ans);
+	    
+	    if(ans.compare("<m>")) return false;
+	    
+	    return true;
 	}
+	
+	/*
+	bool sendTestControl(void){
+	    static byte i = 0;
+	    
+	    i = (++i > 255 ? 0 : i);
+	    
+	    
+	    byte buffer[9];
+	    buffer[0] = '<';
+	    buffer[1] = 'm';
+	    buffer[2] = 5;
+	    buffer[3] = 0;
+	    buffer[4] = i;
+	    buffer[5] = i;
+	    buffer[6] = i;
+	    buffer[7] = i;
+	    buffer[8] = '>';
+	    
+	    std::string msg;
+	    //msg.assign((char*)buffer,9);
+	    for(int a=0;a<9;a++) msg.push_back((char)buffer[a]);
+	    
+	    std::string ans;
+	    printMsg(msg);
+	    bool ret = mdb.getMessage(msg,ans);
+	    
+	    if(ans.compare("<m>")) return false;
+	    
+	    return true;
+	}
+	*/
 	
 	void reset(){
 	    std::string s("<r>");
-	    mdb.getMessage(s);
+	    //mdb.getMessage(s); // FIXME:
     }
 	
 	// sensors
 	bool getSensors(){
-	    bool ok = true;
 	    
-	    ok = mdb.getSensorData();
+	    bool ok = mdb.getSensorData(imu,mag,batt,drop);
+	    if(!ok) return false;
 	    
-	    return ok;
+	    pub.publishIMU(imu);
+	    pub.publishMagneticField(mag);
+	    pub.publishBattery(batt);
+	    
+	    return true;
 	    
 	} 
     
@@ -305,7 +420,7 @@ public:
         //x = deadband(x,-band,band);
         //y = deadband(y,-band,band);
         
-        //ROS_INFO("Got cmdVel: %g, %g, %g", x, y, z);
+        //ROS_INFO("cmdVelReceived(): %g, %g, %g", x, y, z);
         
         //setState(x,y,z);
 	    desiredVelStates(0) = x;
@@ -325,7 +440,7 @@ public:
      * Simple "is the robot ready" function ... cleans out serial buffer
      */
     bool ready(){
-        std::string msg = "<v>";
+        std::string msg("<v>");
         std::string ans;
         bool ok = mdb.getMessage(msg,ans);
         
@@ -350,6 +465,7 @@ public:
             //ROS_INFO("loop");
             
             // Main loop functions
+            /*
             bool ok = getSensors();
             if(ok){
                 mdb.publishIMU();
@@ -357,8 +473,16 @@ public:
                 //ROS_INFO("got sensor data");
             }
             else ROS_ERROR("==[[ Couldn't get sensor data ]]==");
+            */
             
-            sendControl();
+            /*
+        std::string msg = "<v>";
+        std::string ans;
+        bool ok = mdb.getMessage(msg,ans);
+        std::cout<<"Responce: "<<ans<<std::endl;
+        */
+            //ready();
+            //sendTestControl();
 
             ros::spinOnce();
             r.sleep();
@@ -376,9 +500,15 @@ protected:
 	Eigen::MatrixXd phi; // converts velocities to motor speeds matrix
 	
 	geometry_msgs::Twist previous_twist;
-	ros::Subscriber cmd_vel_sub;
+	//ros::Subscriber cmd_vel_sub;
+	
+    sensor_msgs::Imu imu;
+    sensor_msgs::MagneticField mag;
+    soccer::Battery batt;
+    unsigned int drop;
 	
     SoccerMessageDB mdb;
+    SoccerPublisher pub;
 };
 
 ////////////////////////////////////////////////////////////
